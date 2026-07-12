@@ -1,0 +1,27 @@
+# terraform
+*.tfstate
+*.tfstate.*
+.terraform/
+*.tfvars
+
+# secrets
+.env
+.env.*
+*.pem
+id_rsa*
+id_ed25519*
+
+# python
+__pycache__/
+.venv/
+*.pyc
+
+# node
+node_modules/
+dist/
+
+# eval fixtures (large, recorded artifacts)
+evals/fixtures/
+
+# os
+.DS_Store
