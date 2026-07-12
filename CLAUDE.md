@@ -5,15 +5,11 @@ self-hosted Prometheus/Grafana/Loki/Tempo stack, diagnoses injected faults via a
 tool-use loop (LiteLLM → Bedrock/Anthropic), retrieves runbooks from pgvector, and remediates via
 Ansible under **tiered autonomy** (read-only → low-risk auto → high-risk human approval).
 
-- Roadmap (locked decisions): `sentinel-build-roadmap.md`
-- Execution plans (**local-only, never committed**): `docs/plans/00-overview.md` → phase files
-- Shared interfaces — tool contracts, risk policy, DB schema, API, fault catalog: `docs/plans/01-contracts.md`
-
 ## Phase tracker
 
 | Phase | Scope | Status |
 |---|---|---|
-| 0 | Foundations (state backend, budget, CI) | not started |
+| 0 | Foundations (state backend, budget, CI) | ✅ done |
 | 1 | Terraform fleet + app deploy | not started |
 | 2 | LGTM observability | not started |
 | 3 | Faults + remediation playbooks | not started |
@@ -58,10 +54,10 @@ docs/        plans + writeups — local-only
 
 ```bash
 make up / make down        # start/stop EC2 fleet by Project=sentinel tag — down after EVERY session
-make fault F=<label>       # inject fault (labels in contracts §6)
+make fault F=<label>       # inject fault
 make evals-replay          # full eval suite, no AWS needed (what CI runs)
 make evals-live            # eval against the live fleet, records fixtures
-make demo                  # scripted chaos demo (Phase 8)
+make demo                  # scripted chaos demo
 uv run pytest              # in agent/ or evals/
 npm run build && npm test  # in dashboard/
 terraform plan             # in infra/ (state in S3, never local)
