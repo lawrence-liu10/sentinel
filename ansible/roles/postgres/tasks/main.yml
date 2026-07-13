@@ -1,0 +1,37 @@
+- name: Ensure postgres data dir
+  ansible.builtin.file:
+    path: /opt/sentinel/postgres/data
+    state: directory
+    mode: "0755"
+  become: true
+
+- name: Run postgres (pgvector) container
+  become: true
+  community.docker.docker_container:
+    name: "{{ postgres_container }}"
+    image: "{{ postgres_image }}"
+    state: started
+    restart_policy: unless-stopped
+    published_ports: ["5432:5432"]
+    env:
+      POSTGRES_DB: "{{ postgres_db }}"
+      POSTGRES_USER: "{{ postgres_user }}"
+      POSTGRES_PASSWORD: "{{ pg_password }}"
+    volumes:
+      - /opt/sentinel/postgres/data:/var/lib/postgresql/data
+
+- name: Wait for postgres to accept connections
+  become: true
+  ansible.builtin.command: "docker exec {{ postgres_container }} pg_isready -U {{ postgres_user }} -d {{ postgres_db }}"
+  register: pg_ready
+  until: pg_ready.rc == 0
+  retries: 20
+  delay: 3
+  changed_when: false
+
+- name: Apply schema (idempotent — CREATE ... IF NOT EXISTS)
+  become: true
+  ansible.builtin.shell:
+    cmd: "docker exec -i {{ postgres_container }} psql -v ON_ERROR_STOP=1 -U {{ postgres_user }} -d {{ postgres_db }}"
+    stdin: "{{ lookup('ansible.builtin.file', 'schema.sql') }}"
+  changed_when: true

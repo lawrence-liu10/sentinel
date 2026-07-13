@@ -1,0 +1,83 @@
+# App rollout only (assumes base/docker/postgres already provisioned by site.yml).
+# Inter-service URLs use each target's PRIVATE ip + published host port, since the
+# calls cross hosts (app-1 ↔ app-2 ↔ db-1) where a single docker network can't reach.
+
+- name: Deploy app services
+  hosts: app
+  vars:
+    pg_password: "{{ lookup('amazon.aws.aws_ssm', '/sentinel/pg_password', region=aws_region) }}"
+    db_ip: "{{ hostvars['db-1'].private_ip }}"
+    app1_ip: "{{ hostvars['app-1'].private_ip }}"
+    app2_ip: "{{ hostvars['app-2'].private_ip }}"
+    database_url: "postgresql://{{ postgres_user }}:{{ pg_password }}@{{ db_ip }}:5432/{{ postgres_db }}"
+  tasks:
+    - name: api-gateway (app-1)
+      when: inventory_hostname == 'app-1'
+      ansible.builtin.include_role:
+        name: app_service
+      vars:
+        app_name: api-gateway
+        app_host_port: 8000
+        app_env:
+          ORDERS_URL: "http://{{ app1_ip }}:8001"
+          PAYMENTS_TIMEOUT_MS: "2000"
+
+    - name: orders-service (app-1)
+      when: inventory_hostname == 'app-1'
+      ansible.builtin.include_role:
+        name: app_service
+      vars:
+        app_name: orders-service
+        app_host_port: 8001
+        app_env:
+          DATABASE_URL: "{{ database_url }}"
+          PAYMENTS_URL: "http://{{ app2_ip }}:8002"
+          PAYMENTS_TIMEOUT_MS: "2000"
+
+    - name: payments-service (app-2)
+      when: inventory_hostname == 'app-2'
+      ansible.builtin.include_role:
+        name: app_service
+      vars:
+        app_name: payments-service
+        app_host_port: 8002
+        app_env:
+          REQUIRED_SETTING: "ok"
+
+    - name: checkout-worker (app-2)
+      when: inventory_hostname == 'app-2'
+      ansible.builtin.include_role:
+        name: app_service
+      vars:
+        app_name: checkout-worker
+        app_host_port: 8003
+        app_memory: "256m"
+        app_env:
+          DATABASE_URL: "{{ database_url }}"
+
+# Record the rollout — this is what the agent's list_recent_deploys reads.
+- name: Record deploys
+  hosts: db
+  vars:
+    pg_password: "{{ lookup('amazon.aws.aws_ssm', '/sentinel/pg_password', region=aws_region) }}"
+  tasks:
+    - name: Insert a deploys row per service
+      become: true
+      ansible.builtin.command:
+        argv:
+          - docker
+          - exec
+          - "{{ postgres_container }}"
+          - psql
+          - -U
+          - "{{ postgres_user }}"
+          - -d
+          - "{{ postgres_db }}"
+          - -c
+          - "INSERT INTO deploys (service, tag, actor) VALUES ('{{ item }}', '{{ image_tag }}', 'ansible')"
+      loop:
+        - api-gateway
+        - orders-service
+        - payments-service
+        - checkout-worker
+      changed_when: true

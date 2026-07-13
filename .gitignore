@@ -10,6 +10,8 @@
 *.pem
 id_rsa*
 id_ed25519*
+*_ed25519
+infra/.ssh/
 
 # python
 __pycache__/
@@ -19,6 +21,10 @@ __pycache__/
 # node
 node_modules/
 dist/
+
+# ansible (generated inventory + locally-installed collections)
+ansible/.collections/
+ansible/inventory/hosts.yml
 
 # eval fixtures (large, recorded artifacts)
 evals/fixtures/

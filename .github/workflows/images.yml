@@ -1,0 +1,60 @@
+name: images
+
+# Build + push one image per service to GHCR on any app/ change. Tag = v<run>.
+on:
+  push:
+    paths:
+      - "app/**"
+      - ".github/workflows/images.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  REGISTRY: ghcr.io
+  OWNER: ${{ github.repository_owner }}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        service: [api-gateway, orders-service, payments-service, checkout-worker]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build and push ${{ matrix.service }}
+        uses: docker/build-push-action@v6
+        with:
+          context: app/${{ matrix.service }}
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.OWNER }}/sentinel-${{ matrix.service }}:v${{ github.run_number }}
+            ${{ env.REGISTRY }}/${{ env.OWNER }}/sentinel-${{ matrix.service }}:latest
+
+  # Deliberately broken payments image for fault F3 (missing required env ⇒ boot exit).
+  payments-bad:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build and push payments-service:v${{ github.run_number }}-bad
+        uses: docker/build-push-action@v6
+        with:
+          context: app/payments-service
+          push: true
+          build-args: |
+            REQUIRED_SETTING=
+          tags: ${{ env.REGISTRY }}/${{ env.OWNER }}/sentinel-payments-service:v${{ github.run_number }}-bad
