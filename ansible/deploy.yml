@@ -1,15 +1,20 @@
-# App rollout only (assumes base/docker/postgres already provisioned by site.yml).
-# Inter-service URLs use each target's PRIVATE ip + published host port, since the
-# calls cross hosts (app-1 ↔ app-2 ↔ db-1) where a single docker network can't reach.
+# App rollout only (base/docker/postgres already provisioned by site.yml).
+# Inter-service URLs use each target's PRIVATE ip + published host port,
+# because the calls cross hosts (app-1 <-> app-2 <-> db-1) where a single
+# docker network can't reach.
 
 - name: Deploy app services
   hosts: app
   vars:
-    pg_password: "{{ lookup('amazon.aws.aws_ssm', '/sentinel/pg_password', region=aws_region) }}"
+    pg_password: >-
+      {{ lookup('amazon.aws.aws_ssm', '/sentinel/pg_password',
+      region=aws_region) }}
     db_ip: "{{ hostvars['db-1'].private_ip }}"
     app1_ip: "{{ hostvars['app-1'].private_ip }}"
     app2_ip: "{{ hostvars['app-2'].private_ip }}"
-    database_url: "postgresql://{{ postgres_user }}:{{ pg_password }}@{{ db_ip }}:5432/{{ postgres_db }}"
+    database_url: >-
+      postgresql://{{ postgres_user }}:{{ pg_password }}@{{ db_ip
+      }}:5432/{{ postgres_db }}
   tasks:
     - name: api-gateway (app-1)
       when: inventory_hostname == 'app-1'
@@ -59,7 +64,9 @@
 - name: Record deploys
   hosts: db
   vars:
-    pg_password: "{{ lookup('amazon.aws.aws_ssm', '/sentinel/pg_password', region=aws_region) }}"
+    pg_password: >-
+      {{ lookup('amazon.aws.aws_ssm', '/sentinel/pg_password',
+      region=aws_region) }}
   tasks:
     - name: Insert a deploys row per service
       become: true
@@ -74,7 +81,9 @@
           - -d
           - "{{ postgres_db }}"
           - -c
-          - "INSERT INTO deploys (service, tag, actor) VALUES ('{{ item }}', '{{ image_tag }}', 'ansible')"
+          - >-
+            INSERT INTO deploys (service, tag, actor)
+            VALUES ('{{ item }}', '{{ image_tag }}', 'ansible')
       loop:
         - api-gateway
         - orders-service

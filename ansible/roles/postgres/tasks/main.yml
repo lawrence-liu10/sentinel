@@ -22,7 +22,9 @@
 
 - name: Wait for postgres to accept connections
   become: true
-  ansible.builtin.command: "docker exec {{ postgres_container }} pg_isready -U {{ postgres_user }} -d {{ postgres_db }}"
+  ansible.builtin.command: >-
+    docker exec {{ postgres_container }} pg_isready
+    -U {{ postgres_user }} -d {{ postgres_db }}
   register: pg_ready
   until: pg_ready.rc == 0
   retries: 20
@@ -32,6 +34,8 @@
 - name: Apply schema (idempotent — CREATE ... IF NOT EXISTS)
   become: true
   ansible.builtin.shell:
-    cmd: "docker exec -i {{ postgres_container }} psql -v ON_ERROR_STOP=1 -U {{ postgres_user }} -d {{ postgres_db }}"
+    cmd: >-
+      docker exec -i {{ postgres_container }} psql -v ON_ERROR_STOP=1
+      -U {{ postgres_user }} -d {{ postgres_db }}
     stdin: "{{ lookup('ansible.builtin.file', 'schema.sql') }}"
   changed_when: true

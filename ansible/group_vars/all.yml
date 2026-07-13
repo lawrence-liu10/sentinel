@@ -1,4 +1,4 @@
-# Shared vars. Secrets are NEVER here — pg_password is pulled from SSM at deploy.
+# Shared vars. Secrets are NEVER here; pg_password comes from SSM at deploy.
 aws_region: us-east-1
 ghcr_owner: lawrence-liu10
 

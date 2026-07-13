@@ -20,7 +20,7 @@
   become: true
   notify: Restart sshd
 
-# --- Swap on ctrl-1 (t3.micro, 1 GiB) to absorb agent/LiteLLM/dashboard spikes ---
+# --- Swap on ctrl-1 (t3.micro, 1 GiB) for agent/LiteLLM/dashboard spikes ---
 - name: Set up swap on the control host
   when:
     - "'control' in group_names"

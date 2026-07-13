@@ -1,6 +1,6 @@
 # Full provision: hardening + docker + postgres, then the app rollout.
-# Run:  ansible-playbook site.yml            (uses generated inventory/hosts.yml)
-#       ansible-playbook site.yml -e image_tag=v7
+# Run: ansible-playbook site.yml  (uses generated inventory/hosts.yml)
+#      ansible-playbook site.yml -e image_tag=v7
 
 - name: Base hardening + swap (all hosts)
   hosts: all
@@ -15,7 +15,9 @@
 - name: Postgres + pgvector (db-1)
   hosts: db
   vars:
-    pg_password: "{{ lookup('amazon.aws.aws_ssm', '/sentinel/pg_password', region=aws_region) }}"
+    pg_password: >-
+      {{ lookup('amazon.aws.aws_ssm', '/sentinel/pg_password',
+      region=aws_region) }}
   roles:
     - postgres
 
