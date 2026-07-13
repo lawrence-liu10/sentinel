@@ -21,6 +21,12 @@ resource "aws_budgets_budget" "monthly" {
   limit_unit   = "USD"
   time_unit    = "MONTHLY"
 
+  # Measure GROSS usage so alerts fire during the credit period (default counts
+  # net-of-credit dollars, which stay ~$0 while credits cover the bill).
+  cost_types {
+    include_credit = false
+  }
+
   dynamic "notification" {
     for_each = toset([20, 50, 80, 100])
     content {

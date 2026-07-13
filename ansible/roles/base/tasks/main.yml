@@ -1,0 +1,50 @@
+- name: Install base packages
+  ansible.builtin.apt:
+    name: [ca-certificates, curl, gnupg]
+    update_cache: true
+    cache_valid_time: 3600
+  become: true
+
+# --- SSH hardening (security invariant: key-only, no root, no passwords) ---
+- name: Harden sshd
+  ansible.builtin.copy:
+    dest: /etc/ssh/sshd_config.d/10-sentinel.conf
+    content: |
+      PermitRootLogin no
+      PasswordAuthentication no
+      PubkeyAuthentication yes
+      KbdInteractiveAuthentication no
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+  notify: Restart sshd
+
+# --- Swap on ctrl-1 (t3.micro, 1 GiB) to absorb agent/LiteLLM/dashboard spikes ---
+- name: Set up swap on the control host
+  when:
+    - "'control' in group_names"
+    - ansible_swaptotal_mb | int == 0
+  become: true
+  block:
+    - name: Allocate 2G swapfile
+      ansible.builtin.command:
+        cmd: fallocate -l 2G /swapfile
+        creates: /swapfile
+    - name: Lock down swapfile perms
+      ansible.builtin.file:
+        path: /swapfile
+        mode: "0600"
+    - name: Format swapfile
+      ansible.builtin.command:
+        cmd: mkswap /swapfile
+      changed_when: true
+    - name: Enable swap now
+      ansible.builtin.command:
+        cmd: swapon /swapfile
+      changed_when: true
+    - name: Persist swap in fstab
+      ansible.builtin.lineinfile:
+        path: /etc/fstab
+        line: "/swapfile none swap sw 0 0"
+        state: present

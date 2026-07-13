@@ -1,0 +1,5 @@
+# Overridden per service by deploy.yml.
+app_restart_policy: on-failure
+app_memory: ""   # e.g. "256m"; empty ⇒ no limit
+app_env: {}
+app_tag: "{{ image_tag }}"

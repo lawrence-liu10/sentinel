@@ -1,0 +1,12 @@
+- name: "Deploy {{ app_name }} :{{ app_tag }}"
+  become: true
+  community.docker.docker_container:
+    name: "sentinel-{{ app_name }}"
+    image: "ghcr.io/{{ ghcr_owner }}/sentinel-{{ app_name }}:{{ app_tag }}"
+    pull: true
+    recreate: true
+    state: started
+    restart_policy: "{{ app_restart_policy }}"
+    published_ports: ["{{ app_host_port }}:8000"]
+    env: "{{ app_env }}"
+    memory: "{{ app_memory | default(omit, true) }}"
