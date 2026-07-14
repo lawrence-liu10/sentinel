@@ -1,5 +1,7 @@
 # Overridden per service by deploy.yml.
-app_restart_policy: on-failure
+# unless-stopped survives a host reboot (make down/up) AND still crash-loops a
+# bad image (fault F3), so it dominates on-failure for our needs.
+app_restart_policy: unless-stopped
 app_memory: ""   # e.g. "256m"; empty ⇒ no limit
 app_env: {}
 app_tag: "{{ image_tag }}"

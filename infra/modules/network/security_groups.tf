@@ -93,30 +93,33 @@ resource "aws_vpc_security_group_ingress_rule" "ctrl_agent_from_mon" {
 }
 
 resource "aws_vpc_security_group_ingress_rule" "ctrl_agent_from_admin" {
+  for_each          = toset(var.admin_cidrs)
   security_group_id = aws_security_group.ctrl.id
   description       = "you to agent API"
   ip_protocol       = "tcp"
   from_port         = 8080
   to_port           = 8080
-  cidr_ipv4         = var.admin_cidr
+  cidr_ipv4         = each.value
 }
 
 resource "aws_vpc_security_group_ingress_rule" "ctrl_dashboard_from_admin" {
+  for_each          = toset(var.admin_cidrs)
   security_group_id = aws_security_group.ctrl.id
   description       = "you to dashboard UI"
   ip_protocol       = "tcp"
   from_port         = 3001
   to_port           = 3001
-  cidr_ipv4         = var.admin_cidr
+  cidr_ipv4         = each.value
 }
 
 resource "aws_vpc_security_group_ingress_rule" "ctrl_ssh_from_admin" {
+  for_each          = toset(var.admin_cidrs)
   security_group_id = aws_security_group.ctrl.id
   description       = "you to SSH (ctrl-1 is the bastion)"
   ip_protocol       = "tcp"
   from_port         = 22
   to_port           = 22
-  cidr_ipv4         = var.admin_cidr
+  cidr_ipv4         = each.value
 }
 
 # --- sg-app ingress ---
@@ -185,12 +188,13 @@ resource "aws_vpc_security_group_ingress_rule" "app_ssh_from_ctrl" {
 }
 
 resource "aws_vpc_security_group_ingress_rule" "app_ssh_from_admin" {
+  for_each          = toset(var.admin_cidrs)
   security_group_id = aws_security_group.app.id
   description       = "SSH from you"
   ip_protocol       = "tcp"
   from_port         = 22
   to_port           = 22
-  cidr_ipv4         = var.admin_cidr
+  cidr_ipv4         = each.value
 }
 
 # --- sg-db ingress ---
@@ -250,23 +254,25 @@ resource "aws_vpc_security_group_ingress_rule" "db_ssh_from_ctrl" {
 }
 
 resource "aws_vpc_security_group_ingress_rule" "db_ssh_from_admin" {
+  for_each          = toset(var.admin_cidrs)
   security_group_id = aws_security_group.db.id
   description       = "SSH from you"
   ip_protocol       = "tcp"
   from_port         = 22
   to_port           = 22
-  cidr_ipv4         = var.admin_cidr
+  cidr_ipv4         = each.value
 }
 
 # --- sg-mon ingress ---
 
 resource "aws_vpc_security_group_ingress_rule" "mon_grafana_from_admin" {
+  for_each          = toset(var.admin_cidrs)
   security_group_id = aws_security_group.mon.id
   description       = "you to Grafana UI"
   ip_protocol       = "tcp"
   from_port         = 3000
   to_port           = 3000
-  cidr_ipv4         = var.admin_cidr
+  cidr_ipv4         = each.value
 }
 
 resource "aws_vpc_security_group_ingress_rule" "mon_prometheus_from_ctrl" {
@@ -324,10 +330,11 @@ resource "aws_vpc_security_group_ingress_rule" "mon_ssh_from_ctrl" {
 }
 
 resource "aws_vpc_security_group_ingress_rule" "mon_ssh_from_admin" {
+  for_each          = toset(var.admin_cidrs)
   security_group_id = aws_security_group.mon.id
   description       = "SSH from you"
   ip_protocol       = "tcp"
   from_port         = 22
   to_port           = 22
-  cidr_ipv4         = var.admin_cidr
+  cidr_ipv4         = each.value
 }

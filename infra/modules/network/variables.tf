@@ -1,5 +1,5 @@
 # Inputs for the network module. Sensible defaults for the CIDR layout; the
-# caller must supply admin_cidr (the single public IP allowed to reach SSH and
+# caller must supply admin_cidrs (the public IP(s) allowed to reach SSH and
 # the your-eyes-only web UIs).
 
 variable "vpc_cidr" {
@@ -20,7 +20,7 @@ variable "azs" {
   default     = ["us-east-1a", "us-east-1b"]
 }
 
-variable "admin_cidr" {
-  description = "Single-IP /32 CIDR allowed from the public internet to SSH (22), Grafana (3000), the dashboard (3001), and the agent API (8080)."
-  type        = string
+variable "admin_cidrs" {
+  description = "List of /32 CIDRs allowed from the public internet to SSH (22), Grafana (3000), the dashboard (3001), and the agent API (8080)."
+  type        = list(string)
 }

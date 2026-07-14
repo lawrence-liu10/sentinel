@@ -2,8 +2,8 @@
 # the secrets KMS key), iam (grants decrypt on that key), compute (the fleet).
 
 module "network" {
-  source     = "./modules/network"
-  admin_cidr = var.admin_cidr
+  source      = "./modules/network"
+  admin_cidrs = var.admin_cidrs
 }
 
 module "ssm" {
