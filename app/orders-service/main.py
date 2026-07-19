@@ -6,38 +6,14 @@ Env:
   PAYMENTS_TIMEOUT_MS  client timeout for the charge call, ms (default 2000).
 """
 
-import json
-import logging
 import os
-import sys
 
 import httpx
 import psycopg
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
-
-class JsonFormatter(logging.Formatter):
-    def format(self, record: logging.LogRecord) -> str:
-        entry = {
-            "ts": self.formatTime(record),
-            "level": record.levelname,
-            "service": record.name,
-            "msg": record.getMessage(),
-        }
-        if record.exc_info:
-            entry["exc"] = self.formatException(record.exc_info)
-        return json.dumps(entry)
-
-
-def setup_logging(name: str) -> logging.Logger:
-    handler = logging.StreamHandler(sys.stdout)
-    handler.setFormatter(JsonFormatter())
-    root = logging.getLogger()
-    root.handlers = [handler]
-    root.setLevel(logging.INFO)
-    return logging.getLogger(name)
-
+from common.telemetry import setup_logging, setup_telemetry
 
 log = setup_logging("orders-service")
 
@@ -46,6 +22,7 @@ PAYMENTS_URL = os.environ.get("PAYMENTS_URL", "http://localhost:8002")
 PAYMENTS_TIMEOUT_MS = int(os.environ.get("PAYMENTS_TIMEOUT_MS", "2000"))
 
 app = FastAPI(title="orders-service")
+setup_telemetry(app, "orders-service", instrument_httpx=True, instrument_psycopg=True)
 
 
 class OrderRequest(BaseModel):

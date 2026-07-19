@@ -7,8 +7,9 @@
   roles:
     - base
 
+# mon-1 also runs containers (the LGTM stack), so it needs Docker too.
 - name: Docker engine (container hosts)
-  hosts: app:db
+  hosts: app:db:monitoring
   roles:
     - docker
 
@@ -23,3 +24,6 @@
 
 - name: App services
   ansible.builtin.import_playbook: deploy.yml
+
+- name: Observability stack (LGTM)
+  ansible.builtin.import_playbook: observability.yml

@@ -11,12 +11,14 @@
 # Prometheus/Alertmanager/Tempo reached via SSH tunnel through ctrl-1):
 #
 #   sg-ctrl  8080 <- sg-mon, admin | 3001 <- admin | 22 <- admin
+#            9100 <- sg-mon (Phase 2: scrape ctrl node_exporter)
 #   sg-app   8000-8003 <- sg-app, sg-ctrl, sg-mon | 8000 <- 0.0.0.0/0
 #            9100/8081 <- sg-mon (Phase 2 exporters) | 22 <- sg-ctrl, admin
 #   sg-db    5432 <- sg-app, sg-ctrl | 9100/9187/8081 <- sg-mon (Phase 2)
 #            22 <- sg-ctrl, admin
 #   sg-mon   3000 <- admin | 9090/3100/3200 <- sg-ctrl (agent queries)
-#            3100/4317-4318 <- sg-app (log + trace push) | 22 <- sg-ctrl, admin
+#            3100 <- sg-app, sg-db (promtail push) | 4317-4318 <- sg-app (trace push)
+#            22 <- sg-ctrl, admin
 #
 # Ports with same-host-only traffic get NO rule: LiteLLM 4000 (agent->LiteLLM is
 # localhost on ctrl-1) and Alertmanager 9093 (Prometheus->AM is localhost on mon-1).
@@ -110,6 +112,15 @@ resource "aws_vpc_security_group_ingress_rule" "ctrl_dashboard_from_admin" {
   from_port         = 3001
   to_port           = 3001
   cidr_ipv4         = each.value
+}
+
+resource "aws_vpc_security_group_ingress_rule" "ctrl_node_exporter_from_mon" {
+  security_group_id            = aws_security_group.ctrl.id
+  description                  = "node_exporter scrape of the control host (Phase 2)"
+  ip_protocol                  = "tcp"
+  from_port                    = 9100
+  to_port                      = 9100
+  referenced_security_group_id = aws_security_group.mon.id
 }
 
 resource "aws_vpc_security_group_ingress_rule" "ctrl_ssh_from_admin" {
@@ -309,6 +320,15 @@ resource "aws_vpc_security_group_ingress_rule" "mon_loki_from_app" {
   from_port                    = 3100
   to_port                      = 3100
   referenced_security_group_id = aws_security_group.app.id
+}
+
+resource "aws_vpc_security_group_ingress_rule" "mon_loki_from_db" {
+  security_group_id            = aws_security_group.mon.id
+  description                  = "promtail log push from db-1 (Postgres logs - F2 signal)"
+  ip_protocol                  = "tcp"
+  from_port                    = 3100
+  to_port                      = 3100
+  referenced_security_group_id = aws_security_group.db.id
 }
 
 resource "aws_vpc_security_group_ingress_rule" "mon_otlp_from_app" {

@@ -7,6 +7,12 @@ dependencies = [
     "uvicorn[standard]>=0.32",
     "httpx>=0.28",
     "psycopg[binary]>=3.2",
+    "prometheus-client>=0.21",
+    "opentelemetry-sdk>=1.27",
+    "opentelemetry-exporter-otlp-proto-grpc>=1.27",
+    "opentelemetry-instrumentation-fastapi>=0.48b0",
+    "opentelemetry-instrumentation-httpx>=0.48b0",
+    "opentelemetry-instrumentation-psycopg>=0.48b0",
 ]
 
 [dependency-groups]
@@ -16,7 +22,9 @@ dev = ["pytest>=8.3"]
 package = false
 
 [tool.pytest.ini_options]
-pythonpath = ["."]
+# "." makes `import main` work; ".." reaches app/ so `import common.telemetry`
+# (the shared instrumentation module) resolves during tests.
+pythonpath = [".", ".."]
 
 [tool.ruff]
 line-length = 100

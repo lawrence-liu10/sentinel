@@ -1,0 +1,39 @@
+# Tempo — distributed tracing backend. Receives OTLP from the four services and
+# lets the agent (and acceptance #1) query cross-host traces. 2d retention.
+- name: Ensure tempo dirs (config + data)
+  become: true
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: directory
+    owner: "{{ item.owner }}"
+    mode: "0755"
+  loop:
+    - path: /opt/sentinel/tempo/config
+      owner: root
+    # tempo container runs as uid 10001; its data dir must be writable by it.
+    - path: /opt/sentinel/tempo/data
+      owner: "10001"
+
+- name: Template tempo config
+  become: true
+  ansible.builtin.template:
+    src: tempo.yml.j2
+    dest: /opt/sentinel/tempo/config/tempo.yml
+    mode: "0644"
+  notify: Restart tempo
+
+- name: Run tempo
+  become: true
+  community.docker.docker_container:
+    name: sentinel-tempo
+    image: "{{ tempo_image }}"
+    state: started
+    restart_policy: unless-stopped
+    published_ports:
+      - "3200:3200"
+      - "4317:4317"
+      - "4318:4318"
+    command: ["-config.file=/etc/tempo/tempo.yml"]
+    volumes:
+      - /opt/sentinel/tempo/config/tempo.yml:/etc/tempo/tempo.yml:ro
+      - /opt/sentinel/tempo/data:/var/tempo

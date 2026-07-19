@@ -1,0 +1,6 @@
+- name: Restart alertmanager
+  become: true
+  community.docker.docker_container:
+    name: sentinel-alertmanager
+    state: started
+    restart: true

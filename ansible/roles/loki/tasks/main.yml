@@ -1,0 +1,35 @@
+# Loki — log aggregation. Filesystem store, 3d retention (mon-1 memory budget).
+- name: Ensure loki dirs (config + data)
+  become: true
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: directory
+    owner: "{{ item.owner }}"
+    mode: "0755"
+  loop:
+    - path: /opt/sentinel/loki/config
+      owner: root
+    # loki container runs as uid 10001; its data dir must be writable by it.
+    - path: /opt/sentinel/loki/data
+      owner: "10001"
+
+- name: Template loki config
+  become: true
+  ansible.builtin.template:
+    src: loki.yml.j2
+    dest: /opt/sentinel/loki/config/loki.yml
+    mode: "0644"
+  notify: Restart loki
+
+- name: Run loki
+  become: true
+  community.docker.docker_container:
+    name: sentinel-loki
+    image: "{{ loki_image }}"
+    state: started
+    restart_policy: unless-stopped
+    published_ports: ["3100:3100"]
+    command: ["-config.file=/etc/loki/loki.yml"]
+    volumes:
+      - /opt/sentinel/loki/config/loki.yml:/etc/loki/loki.yml:ro
+      - /opt/sentinel/loki/data:/loki

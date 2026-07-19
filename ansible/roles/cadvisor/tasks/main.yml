@@ -1,0 +1,23 @@
+# cAdvisor exposes per-container resource metrics (memory vs. limit, throttling,
+# restarts) — the primary signal for F4 (container OOM). Needs read-only host
+# mounts to see cgroups + the Docker state. Scraped by Prometheus on :8081.
+- name: Run cAdvisor
+  become: true
+  community.docker.docker_container:
+    name: sentinel-cadvisor
+    image: "{{ cadvisor_image }}"
+    state: started
+    restart_policy: unless-stopped
+    privileged: true
+    published_ports: ["8081:8080"]
+    devices:
+      - /dev/kmsg:/dev/kmsg
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+      - /dev/disk/:/dev/disk:ro
+    command:
+      - --docker_only=true
+      - --housekeeping_interval=15s

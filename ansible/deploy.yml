@@ -15,6 +15,9 @@
     database_url: >-
       postgresql://{{ postgres_user }}:{{ pg_password }}@{{ db_ip
       }}:5432/{{ postgres_db }}
+    # Where every service ships spans (Tempo OTLP/gRPC on mon-1). Empty in local
+    # dev ⇒ common.telemetry creates spans but exports nothing.
+    otlp_endpoint: "http://{{ mon_ip }}:4317"
   tasks:
     - name: api-gateway (app-1)
       when: inventory_hostname == 'app-1'
@@ -26,6 +29,7 @@
         app_env:
           ORDERS_URL: "http://{{ app1_ip }}:8001"
           PAYMENTS_TIMEOUT_MS: "2000"
+          OTEL_EXPORTER_OTLP_ENDPOINT: "{{ otlp_endpoint }}"
 
     - name: orders-service (app-1)
       when: inventory_hostname == 'app-1'
@@ -38,6 +42,7 @@
           DATABASE_URL: "{{ database_url }}"
           PAYMENTS_URL: "http://{{ app2_ip }}:8002"
           PAYMENTS_TIMEOUT_MS: "2000"
+          OTEL_EXPORTER_OTLP_ENDPOINT: "{{ otlp_endpoint }}"
 
     - name: payments-service (app-2)
       when: inventory_hostname == 'app-2'
@@ -48,6 +53,7 @@
         app_host_port: 8002
         app_env:
           REQUIRED_SETTING: "ok"
+          OTEL_EXPORTER_OTLP_ENDPOINT: "{{ otlp_endpoint }}"
 
     - name: checkout-worker (app-2)
       when: inventory_hostname == 'app-2'
@@ -59,6 +65,7 @@
         app_memory: "256m"
         app_env:
           DATABASE_URL: "{{ database_url }}"
+          OTEL_EXPORTER_OTLP_ENDPOINT: "{{ otlp_endpoint }}"
 
 # Record the rollout — this is what the agent's list_recent_deploys reads.
 - name: Record deploys

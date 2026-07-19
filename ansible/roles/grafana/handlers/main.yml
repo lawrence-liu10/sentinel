@@ -1,0 +1,6 @@
+- name: Restart grafana
+  become: true
+  community.docker.docker_container:
+    name: sentinel-grafana
+    state: started
+    restart: true

@@ -1,0 +1,37 @@
+# Grafana datasources — provisioned by Ansible (not clicked in the UI).
+apiVersion: 1
+
+datasources:
+  - name: Prometheus
+    uid: prometheus
+    type: prometheus
+    access: proxy
+    url: http://{{ mon_ip }}:9090
+    isDefault: true
+
+  - name: Loki
+    uid: loki
+    type: loki
+    access: proxy
+    url: http://{{ mon_ip }}:3100
+    jsonData:
+      # Turn a log line's trace_id into a click-through to the Tempo trace.
+      derivedFields:
+        - name: TraceID
+          matcherType: label
+          matcherRegex: trace_id
+          datasourceUid: tempo
+          url: "$${__value.raw}"
+
+  - name: Tempo
+    uid: tempo
+    type: tempo
+    access: proxy
+    url: http://{{ mon_ip }}:3200
+    jsonData:
+      # Jump from a span to the logs carrying the same trace_id.
+      tracesToLogsV2:
+        datasourceUid: loki
+        filterByTraceID: true
+        spanStartTimeShift: "-5m"
+        spanEndTimeShift: "5m"

@@ -9,42 +9,27 @@ Env:
 """
 
 import asyncio
-import json
-import logging
 import os
-import sys
 from contextlib import asynccontextmanager
 
 import psycopg
 from fastapi import FastAPI, HTTPException
+from prometheus_client import Counter
 
-
-class JsonFormatter(logging.Formatter):
-    def format(self, record: logging.LogRecord) -> str:
-        entry = {
-            "ts": self.formatTime(record),
-            "level": record.levelname,
-            "service": record.name,
-            "msg": record.getMessage(),
-        }
-        if record.exc_info:
-            entry["exc"] = self.formatException(record.exc_info)
-        return json.dumps(entry)
-
-
-def setup_logging(name: str) -> logging.Logger:
-    handler = logging.StreamHandler(sys.stdout)
-    handler.setFormatter(JsonFormatter())
-    root = logging.getLogger()
-    root.handlers = [handler]
-    root.setLevel(logging.INFO)
-    return logging.getLogger(name)
-
+from common.telemetry import setup_logging, setup_telemetry
 
 log = setup_logging("checkout-worker")
 
 DATABASE_URL = os.environ.get("DATABASE_URL", "postgresql://sentinel@localhost/sentinel")
 POLL_INTERVAL_S = int(os.environ.get("POLL_INTERVAL_S", "5"))
+
+# Outbox rows drained by the worker loop. Unlike the request-scoped metrics in
+# common.telemetry, this counts background work, so it lives with the worker.
+WORKER_JOBS = Counter(
+    "worker_jobs_processed_total",
+    "Total outbox rows processed by the worker loop.",
+    ["service"],
+)
 
 
 def process_batch() -> int:
@@ -59,6 +44,7 @@ async def _poll_loop() -> None:
         try:
             n = process_batch()
             if n:
+                WORKER_JOBS.labels("checkout-worker").inc(n)
                 log.info(f"processed {n} outbox rows")
         except Exception as e:
             log.error(f"outbox poll failed: {e}")
@@ -73,6 +59,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="checkout-worker", lifespan=lifespan)
+setup_telemetry(app, "checkout-worker", instrument_psycopg=True)
 
 
 @app.get("/healthz")

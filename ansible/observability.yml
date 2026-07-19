@@ -1,0 +1,38 @@
+# LGTM observability stack (Phase 2). Run after site.yml (app must be deployed
+# and instrumented). Ordering: bring the mon-1 servers up first, then the agents
+# on app/db hosts push/scrape into them.
+#
+#   ansible-playbook observability.yml
+
+- name: node_exporter (all hosts — host CPU/mem/disk)
+  hosts: all
+  roles:
+    - node_exporter
+
+- name: LGTM servers (mon-1)
+  hosts: monitoring
+  vars:
+    grafana_admin_password: >-
+      {{ lookup('amazon.aws.aws_ssm', '/sentinel/grafana_admin_password',
+      region=aws_region) }}
+  roles:
+    # mon-1 was never dockerized in Phase 1 (site.yml only did app:db then).
+    # Ensure the engine + SDK are present before the container roles run.
+    - docker
+    - loki
+    - tempo
+    - prometheus
+    - alertmanager
+    - grafana
+
+- name: Container + Postgres exporters and log shipping (app + db hosts)
+  hosts: app:db
+  vars:
+    pg_password: >-
+      {{ lookup('amazon.aws.aws_ssm', '/sentinel/pg_password',
+      region=aws_region) }}
+  roles:
+    - cadvisor
+    - role: postgres_exporter
+      when: "'db' in group_names"
+    - promtail

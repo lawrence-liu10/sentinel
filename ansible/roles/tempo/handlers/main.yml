@@ -1,0 +1,6 @@
+- name: Restart tempo
+  become: true
+  community.docker.docker_container:
+    name: sentinel-tempo
+    state: started
+    restart: true

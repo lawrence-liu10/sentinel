@@ -1,0 +1,38 @@
+# Alertmanager — receives fired alerts from Prometheus (localhost) and will fan
+# them out to the agent webhook in a later phase.
+- name: Ensure alertmanager dirs (config + data)
+  become: true
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: directory
+    owner: "{{ item.owner }}"
+    mode: "0755"
+  loop:
+    - path: /opt/sentinel/alertmanager/config
+      owner: root
+    # alertmanager container runs as uid 65534 (nobody).
+    - path: /opt/sentinel/alertmanager/data
+      owner: "65534"
+
+- name: Copy alertmanager config
+  become: true
+  ansible.builtin.copy:
+    src: alertmanager.yml
+    dest: /opt/sentinel/alertmanager/config/alertmanager.yml
+    mode: "0644"
+  notify: Restart alertmanager
+
+- name: Run alertmanager
+  become: true
+  community.docker.docker_container:
+    name: sentinel-alertmanager
+    image: "{{ alertmanager_image }}"
+    state: started
+    restart_policy: unless-stopped
+    published_ports: ["9093:9093"]
+    command:
+      - --config.file=/etc/alertmanager/alertmanager.yml
+      - --storage.path=/alertmanager
+    volumes:
+      - /opt/sentinel/alertmanager/config/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      - /opt/sentinel/alertmanager/data:/alertmanager

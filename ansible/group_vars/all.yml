@@ -10,3 +10,26 @@ postgres_image: pgvector/pgvector:pg16
 postgres_container: sentinel-postgres
 postgres_db: sentinel
 postgres_user: sentinel
+
+# --- Observability stack (Phase 2) — pinned image tags/versions ---
+# Verified against the registries on 2026-07-13. LGTM config schemas shift
+# between majors, so these are exact pins, not floating tags.
+prometheus_image: prom/prometheus:v3.13.1
+alertmanager_image: prom/alertmanager:v0.33.1
+grafana_image: grafana/grafana:12.3.8
+loki_image: grafana/loki:3.7.3
+promtail_image: grafana/promtail:3.6.11
+tempo_image: grafana/tempo:2.8.1
+cadvisor_image: gcr.io/cadvisor/cadvisor:v0.55.1
+postgres_exporter_image: quay.io/prometheuscommunity/postgres-exporter:v0.20.1
+node_exporter_version: "1.12.0"
+
+# Retention — kept tight so mon-1 (t3.medium) stays under memory (risk reg. #2).
+prometheus_retention_time: 3d
+prometheus_retention_size: 2GB
+loki_retention_hours: 72
+tempo_retention_hours: 48
+
+# mon-1 private IP — where every agent ships metrics/logs/traces. Resolved from
+# the Terraform-generated inventory, never hardcoded.
+mon_ip: "{{ hostvars['mon-1'].private_ip }}"
