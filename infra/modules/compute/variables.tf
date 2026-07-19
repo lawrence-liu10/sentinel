@@ -41,3 +41,16 @@ variable "secrets_kms_key_id" {
   description = "KMS key id used to encrypt /sentinel/ssh_private_key."
   type        = string
 }
+
+variable "ami_id" {
+  description = <<-EOT
+    Pinned Ubuntu 24.04 (noble) amd64 AMI. Pinned rather than most_recent so a
+    newly published Canonical image can't force-replace the running fleet.
+    Refresh with:
+      aws ec2 describe-images --owners 099720109477 \
+        --filters 'Name=name,Values=ubuntu/images/hvm-ssd-gp3/ubuntu-noble-24.04-amd64-server-*' \
+        --query 'sort_by(Images,&CreationDate)[-1].ImageId' --output text
+  EOT
+  type        = string
+  default     = "ami-0a02a779008fa3b99"
+}

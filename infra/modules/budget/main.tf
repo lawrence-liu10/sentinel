@@ -38,6 +38,14 @@ data "aws_iam_policy_document" "stop_fleet" {
       values   = ["sentinel"]
     }
   }
+  # RUN_SSM_DOCUMENTS/STOP_EC2_INSTANCES invokes the AWS-managed AWS-StopEC2Instance
+  # automation; without this the action fails with an ssm:StartAutomationExecution
+  # AccessDenied. The actual stop is still gated by the tag condition above.
+  statement {
+    sid       = "RunStopAutomation"
+    actions   = ["ssm:StartAutomationExecution"]
+    resources = ["arn:aws:ssm:${data.aws_region.current.name}::document/AWS-StopEC2Instance"]
+  }
 }
 
 resource "aws_iam_role" "budget_action" {
