@@ -6,20 +6,10 @@
 # Terraform-generated private key is stored in the (encrypted, S3) state; a
 # hardened prod setup would generate it off-box and import only the public key.
 
-data "aws_ami" "ubuntu" {
-  most_recent = true
-  owners      = ["099720109477"] # Canonical
-
-  filter {
-    name   = "name"
-    values = ["ubuntu/images/hvm-ssd-gp3/ubuntu-noble-24.04-amd64-server-*"]
-  }
-
-  filter {
-    name   = "virtualization-type"
-    values = ["hvm"]
-  }
-}
+# AMI is pinned via var.ami_id (Ubuntu 24.04 noble amd64, Canonical 099720109477).
+# We deliberately avoid a most_recent data source: a newly published Canonical
+# image would change the resolved id and force-replace the entire running fleet.
+# var.ami_id's description documents how to refresh the pin.
 
 resource "tls_private_key" "ssh" {
   algorithm = "ED25519"
@@ -61,7 +51,7 @@ locals {
 resource "aws_instance" "host" {
   for_each = local.hosts
 
-  ami                    = data.aws_ami.ubuntu.id
+  ami                    = var.ami_id
   instance_type          = each.value.size
   subnet_id              = var.subnet_id
   vpc_security_group_ids = [each.value.sg]
