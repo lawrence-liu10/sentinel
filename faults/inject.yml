@@ -63,8 +63,10 @@
         body: {"type": "conn_leak"}
         status_code: 200
 
-    # F3 — payments ships without REQUIRED_SETTING, exits on boot (crash loop).
-    - name: "F3 bad_deploy — redeploy payments missing REQUIRED_SETTING"
+    # F3 — deploy the :<tag>-bad payments image (REQUIRED_SETTING baked empty)
+    # AND strip the env override, so nothing sets it back to ok and it exits on
+    # boot -> crash loop. The good image bakes ok, so stripping env alone won't.
+    - name: "F3 bad_deploy — deploy the payments :<tag>-bad image"
       when:
         - fault == 'bad_deploy'
         - inventory_hostname == services['payments-service'].host
@@ -72,6 +74,7 @@
         name: app_service
       vars:
         app_name: payments-service
+        app_tag: "{{ image_tag }}-bad"
         app_host_port: "{{ services['payments-service'].port }}"
         app_env: >-
           {{ services['payments-service'].env | dict2items

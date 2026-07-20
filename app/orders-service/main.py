@@ -77,6 +77,11 @@ class FaultRequest(BaseModel):
     type: str
 
 
+# Leave a few slots free when leaking so the DB sits NEAR exhaustion (>90%) but
+# the postgres_exporter can still connect to measure it — hold every slot and
+# pg_stat_activity_count vanishes exactly when PostgresConnExhaustion needs it.
+CONN_LEAK_HEADROOM = 5
+
 # Connections opened and deliberately never released (fault F2). Module-level so
 # they outlive the request and keep occupying Postgres slots until the container
 # restarts — which is exactly the correct remediation (restart_container).
@@ -92,14 +97,19 @@ def admin_fault(req: FaultRequest) -> dict:
     raise HTTPException(status_code=400, detail=f"unknown fault type: {req.type}")
 
 
-def _leak_connections(max_conns: int = 500) -> dict:
-    """Open connections and never close them until Postgres refuses more, driving
-    pg_stat_activity to max_connections (PostgresConnExhaustion). The safety cap
-    just prevents an infinite loop against a DB with huge headroom; real
-    exhaustion trips first."""
-    while len(_leaked_conns) < max_conns:
+def _leak_connections() -> dict:
+    """Hold most of the pool without ever releasing it, driving pg_stat_activity
+    above 90% of max_connections (PostgresConnExhaustion) while leaving
+    CONN_LEAK_HEADROOM slots so the exporter can still scrape the exhaustion.
+    Runtime-only: a container restart drops the process and all its connections
+    (the remediation)."""
+    with psycopg.connect(DATABASE_URL) as conn, conn.cursor() as cur:
+        cur.execute("SHOW max_connections")
+        max_conns = int(cur.fetchone()[0])
+    target = max_conns - CONN_LEAK_HEADROOM
+    while len(_leaked_conns) < target:
         try:
             _leaked_conns.append(psycopg.connect(DATABASE_URL))
         except psycopg.OperationalError:
             break
-    return {"type": "conn_leak", "leaked": len(_leaked_conns)}
+    return {"type": "conn_leak", "leaked": len(_leaked_conns), "max_conns": max_conns}

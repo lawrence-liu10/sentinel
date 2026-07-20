@@ -61,4 +61,8 @@ jobs:
           push: true
           build-args: |
             REQUIRED_SETTING=
-          tags: ${{ env.REGISTRY }}/${{ env.OWNER }}/sentinel-payments-service:v${{ github.run_number }}-bad
+          # latest-bad is the stable tag the fault harness deploys (F3); the
+          # versioned tag is kept for provenance.
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.OWNER }}/sentinel-payments-service:v${{ github.run_number }}-bad
+            ${{ env.REGISTRY }}/${{ env.OWNER }}/sentinel-payments-service:latest-bad
