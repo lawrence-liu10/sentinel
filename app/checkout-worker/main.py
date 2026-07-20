@@ -9,42 +9,29 @@ Env:
 """
 
 import asyncio
-import json
-import logging
 import os
-import sys
+import threading
 from contextlib import asynccontextmanager
 
 import psycopg
 from fastapi import FastAPI, HTTPException
+from prometheus_client import Counter
+from pydantic import BaseModel
 
-
-class JsonFormatter(logging.Formatter):
-    def format(self, record: logging.LogRecord) -> str:
-        entry = {
-            "ts": self.formatTime(record),
-            "level": record.levelname,
-            "service": record.name,
-            "msg": record.getMessage(),
-        }
-        if record.exc_info:
-            entry["exc"] = self.formatException(record.exc_info)
-        return json.dumps(entry)
-
-
-def setup_logging(name: str) -> logging.Logger:
-    handler = logging.StreamHandler(sys.stdout)
-    handler.setFormatter(JsonFormatter())
-    root = logging.getLogger()
-    root.handlers = [handler]
-    root.setLevel(logging.INFO)
-    return logging.getLogger(name)
-
+from common.telemetry import setup_logging, setup_telemetry
 
 log = setup_logging("checkout-worker")
 
 DATABASE_URL = os.environ.get("DATABASE_URL", "postgresql://sentinel@localhost/sentinel")
 POLL_INTERVAL_S = int(os.environ.get("POLL_INTERVAL_S", "5"))
+
+# Outbox rows drained by the worker loop. Unlike the request-scoped metrics in
+# common.telemetry, this counts background work, so it lives with the worker.
+WORKER_JOBS = Counter(
+    "worker_jobs_processed_total",
+    "Total outbox rows processed by the worker loop.",
+    ["service"],
+)
 
 
 def process_batch() -> int:
@@ -59,6 +46,7 @@ async def _poll_loop() -> None:
         try:
             n = process_batch()
             if n:
+                WORKER_JOBS.labels("checkout-worker").inc(n)
                 log.info(f"processed {n} outbox rows")
         except Exception as e:
             log.error(f"outbox poll failed: {e}")
@@ -73,6 +61,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="checkout-worker", lifespan=lifespan)
+setup_telemetry(app, "checkout-worker", instrument_psycopg=True)
 
 
 @app.get("/healthz")
@@ -80,6 +69,28 @@ def healthz() -> dict:
     return {"status": "ok"}
 
 
-@app.post("/admin/fault")
-def admin_fault() -> None:
-    raise HTTPException(status_code=501, detail="fault injection lands in Phase 3")
+class FaultRequest(BaseModel):
+    type: str
+
+
+# Ever-growing buffer that drives the worker past its 256m container limit so the
+# cgroup OOM-kills the process (fault F4 / ContainerOOMKilled). A restart clears
+# it — the correct remediation (restart_container).
+_mem_hog: list[bytes] = []
+
+
+def _hog_memory(chunk_mb: int = 50) -> None:
+    """Allocate until the container's memory limit kills the process. Runs in a
+    background thread so the request returns before the OOM lands."""
+    while True:
+        _mem_hog.append(b"\0" * (chunk_mb * 1024 * 1024))
+
+
+@app.post("/admin/fault", status_code=202)
+def admin_fault(req: FaultRequest) -> dict:
+    if os.environ.get("FAULT_INJECTION_ENABLED") != "true":
+        raise HTTPException(status_code=403, detail="fault injection disabled")
+    if req.type == "mem_hog":
+        threading.Thread(target=_hog_memory, daemon=True).start()
+        return {"type": "mem_hog", "status": "allocating"}
+    raise HTTPException(status_code=400, detail=f"unknown fault type: {req.type}")

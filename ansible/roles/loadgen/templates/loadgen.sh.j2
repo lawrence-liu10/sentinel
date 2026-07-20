@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+# Background ~1 rps load against api-gateway /checkout so the rate/latency alerts
+# have steady traffic to fire against — faults are invisible without load.
+# Managed by Ansible (loadgen role); do not edit on the host.
+set -u
+URL="http://{{ hostvars[services['api-gateway'].host].private_ip }}:{{ services['api-gateway'].port }}/checkout"
+while true; do
+  curl -sf -m 5 -X POST "$URL" \
+    -H 'content-type: application/json' \
+    -d '{"item":"widget","qty":1}' >/dev/null 2>&1 || true
+  sleep 1
+done

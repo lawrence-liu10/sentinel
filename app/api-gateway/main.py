@@ -6,37 +6,13 @@ Env:
                        (default 2000; fault F5 drifts this to 1 to force timeouts).
 """
 
-import json
-import logging
 import os
-import sys
 
 import httpx
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
-
-class JsonFormatter(logging.Formatter):
-    def format(self, record: logging.LogRecord) -> str:
-        entry = {
-            "ts": self.formatTime(record),
-            "level": record.levelname,
-            "service": record.name,
-            "msg": record.getMessage(),
-        }
-        if record.exc_info:
-            entry["exc"] = self.formatException(record.exc_info)
-        return json.dumps(entry)
-
-
-def setup_logging(name: str) -> logging.Logger:
-    handler = logging.StreamHandler(sys.stdout)
-    handler.setFormatter(JsonFormatter())
-    root = logging.getLogger()
-    root.handlers = [handler]
-    root.setLevel(logging.INFO)
-    return logging.getLogger(name)
-
+from common.telemetry import setup_logging, setup_telemetry
 
 log = setup_logging("api-gateway")
 
@@ -44,6 +20,7 @@ ORDERS_URL = os.environ.get("ORDERS_URL", "http://localhost:8001")
 PAYMENTS_TIMEOUT_MS = int(os.environ.get("PAYMENTS_TIMEOUT_MS", "2000"))
 
 app = FastAPI(title="api-gateway")
+setup_telemetry(app, "api-gateway", instrument_httpx=True)
 
 
 class CheckoutRequest(BaseModel):

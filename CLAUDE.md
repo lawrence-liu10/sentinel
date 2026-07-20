@@ -11,7 +11,7 @@ Ansible under **tiered autonomy** (read-only → low-risk auto → high-risk hum
 |---|---|---|
 | 0 | Foundations (state backend, budget, CI) | ✅ done |
 | 1 | Terraform fleet + app deploy | ✅ done |
-| 2 | LGTM observability | not started |
+| 2 | LGTM observability | ✅ done |
 | 3 | Faults + remediation playbooks | not started |
 | 4 | Agent core | not started |
 | 5 | RAG | not started |

@@ -33,7 +33,10 @@ jobs:
       - name: Build and push ${{ matrix.service }}
         uses: docker/build-push-action@v6
         with:
-          context: app/${{ matrix.service }}
+          # Context is app/ so the build can reach the shared common/ package;
+          # each service's Dockerfile lives in its own subdir.
+          context: app
+          file: app/${{ matrix.service }}/Dockerfile
           push: true
           tags: |
             ${{ env.REGISTRY }}/${{ env.OWNER }}/sentinel-${{ matrix.service }}:v${{ github.run_number }}
@@ -53,7 +56,8 @@ jobs:
       - name: Build and push payments-service:v${{ github.run_number }}-bad
         uses: docker/build-push-action@v6
         with:
-          context: app/payments-service
+          context: app
+          file: app/payments-service/Dockerfile
           push: true
           build-args: |
             REQUIRED_SETTING=

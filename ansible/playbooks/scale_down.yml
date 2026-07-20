@@ -1,0 +1,19 @@
+# scale_down (risk tier: HIGH — human approval + evidence).
+# Removes the extra replica scale_out created. High-risk only to populate the
+# approval tier — removing capacity is the kind of thing that should need a
+# human — and fully reversible by scale_out. Idempotent; honors --check.
+#
+#   ansible-playbook playbooks/scale_down.yml -e service=orders-service
+- name: Remove the extra replica of a service
+  hosts: app
+  gather_facts: false
+  vars:
+    other_host: >-
+      {{ ['app-1', 'app-2'] | difference([services[service].host]) | first }}
+  tasks:
+    - name: "Remove sentinel-{{ service }}-replica from {{ other_host }}"
+      when: inventory_hostname == other_host
+      become: true
+      community.docker.docker_container:
+        name: "sentinel-{{ service }}-replica"
+        state: absent

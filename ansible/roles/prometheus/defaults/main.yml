@@ -1,0 +1,16 @@
+# Service /metrics topology (a contract from 01-contracts.md §1). Only the
+# host->service mapping is fixed here; the actual IPs are resolved from the
+# Terraform-generated inventory at template time, never hardcoded.
+app_service_targets:
+  - host: app-1
+    port: 8000
+    service: api-gateway
+  - host: app-1
+    port: 8001
+    service: orders-service
+  - host: app-2
+    port: 8002
+    service: payments-service
+  - host: app-2
+    port: 8003
+    service: checkout-worker

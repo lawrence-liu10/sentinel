@@ -1,0 +1,6 @@
+- name: Restart promtail
+  become: true
+  community.docker.docker_container:
+    name: sentinel-promtail
+    state: started
+    restart: true

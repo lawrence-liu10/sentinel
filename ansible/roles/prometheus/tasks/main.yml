@@ -1,0 +1,50 @@
+# Prometheus — metrics store + scraper. Retention capped in time and size so
+# mon-1 (t3.medium) has headroom (risk register #2).
+- name: Ensure prometheus dirs (config + data)
+  become: true
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: directory
+    owner: "{{ item.owner }}"
+    mode: "0755"
+  loop:
+    - path: /opt/sentinel/prometheus/config
+      owner: root
+    # prometheus container runs as uid 65534 (nobody); data dir must be its own.
+    - path: /opt/sentinel/prometheus/data
+      owner: "65534"
+
+- name: Template prometheus config
+  become: true
+  ansible.builtin.template:
+    src: prometheus.yml.j2
+    dest: /opt/sentinel/prometheus/config/prometheus.yml
+    mode: "0644"
+  notify: Restart prometheus
+
+- name: Copy alert rules
+  become: true
+  ansible.builtin.copy:
+    src: alert_rules.yml
+    dest: /opt/sentinel/prometheus/config/alert_rules.yml
+    mode: "0644"
+  notify: Restart prometheus
+
+- name: Run prometheus
+  become: true
+  community.docker.docker_container:
+    name: sentinel-prometheus
+    image: "{{ prometheus_image }}"
+    state: started
+    restart_policy: unless-stopped
+    published_ports: ["9090:9090"]
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time={{ prometheus_retention_time }}
+      - --storage.tsdb.retention.size={{ prometheus_retention_size }}
+      - --web.enable-lifecycle
+    volumes:
+      - /opt/sentinel/prometheus/config/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - /opt/sentinel/prometheus/config/alert_rules.yml:/etc/prometheus/alert_rules.yml:ro
+      - /opt/sentinel/prometheus/data:/prometheus

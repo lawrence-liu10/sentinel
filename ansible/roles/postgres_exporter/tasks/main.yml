@@ -1,0 +1,15 @@
+# postgres_exporter surfaces pg_stat_activity (active/idle connections) and
+# other server stats — the primary metric signal for F2 (connection exhaustion).
+# Connects to the local Postgres over its published port on the host's own IP.
+- name: Run postgres_exporter
+  become: true
+  community.docker.docker_container:
+    name: sentinel-postgres-exporter
+    image: "{{ postgres_exporter_image }}"
+    state: started
+    restart_policy: unless-stopped
+    published_ports: ["9187:9187"]
+    env:
+      DATA_SOURCE_NAME: >-
+        postgresql://{{ postgres_user }}:{{ pg_password }}@{{ private_ip
+        }}:5432/{{ postgres_db }}?sslmode=disable

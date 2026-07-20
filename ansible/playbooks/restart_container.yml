@@ -1,0 +1,34 @@
+# restart_container (risk tier: LOW — auto-executed, logged).
+# Remediation for F2 (orders conn-leak) and F4 (checkout-worker OOM): the fault
+# state is runtime-only, so a container restart clears it (contracts §6).
+# Honors --check (dry-run shows the restart without performing it).
+#
+#   ansible-playbook playbooks/restart_container.yml -e service=orders-service
+#
+# Targets the whole app group and acts only on the host that runs the service:
+# `hosts:` is resolved before group_vars load, so the topology lookup (a
+# group_var) has to happen in a task-level `when`, not in `hosts:`.
+- name: Restart a service container
+  hosts: app
+  gather_facts: false
+  tasks:
+    - name: Remediate on the host that runs the service
+      when: inventory_hostname == services[service].host
+      block:
+        - name: "Restart sentinel-{{ service }}"
+          become: true
+          community.docker.docker_container:
+            name: "sentinel-{{ service }}"
+            state: started
+            restart: true
+
+        - name: "Wait for {{ service }} /healthz to return 200"
+          when: not ansible_check_mode
+          ansible.builtin.uri:
+            url: "http://127.0.0.1:{{ services[service].port }}/healthz"
+            status_code: 200
+          register: health
+          until: health.status == 200
+          retries: 10
+          delay: 3
+          changed_when: false

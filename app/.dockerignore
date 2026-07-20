@@ -1,0 +1,9 @@
+# Build context is now app/ (so images can COPY the shared common/ package).
+# Keep dev-only and per-service cruft out of every image's build context.
+**/.venv
+**/tests
+**/conftest.py
+**/__pycache__
+**/*.pyc
+**/.pytest_cache
+**/.dockerignore

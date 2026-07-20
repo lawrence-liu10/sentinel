@@ -1,0 +1,6 @@
+- name: Restart loki
+  become: true
+  community.docker.docker_container:
+    name: sentinel-loki
+    state: started
+    restart: true

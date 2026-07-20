@@ -1,0 +1,53 @@
+# Grafana — datasources + dashboards provisioned as files (zero manual clicks,
+# acceptance #2). Admin password comes from SSM, never from code.
+- name: Ensure grafana provisioning + dashboard dirs
+  become: true
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    mode: "0755"
+  loop:
+    - /opt/sentinel/grafana/provisioning/datasources
+    - /opt/sentinel/grafana/provisioning/dashboards
+    - /opt/sentinel/grafana/dashboards
+
+- name: Template datasources
+  become: true
+  ansible.builtin.template:
+    src: datasources.yml.j2
+    dest: /opt/sentinel/grafana/provisioning/datasources/datasources.yml
+    mode: "0644"
+  notify: Restart grafana
+
+- name: Copy dashboard provider
+  become: true
+  ansible.builtin.copy:
+    src: dashboards.yml
+    dest: /opt/sentinel/grafana/provisioning/dashboards/dashboards.yml
+    mode: "0644"
+  notify: Restart grafana
+
+- name: Copy dashboard JSONs
+  become: true
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../grafana/dashboards/"
+    dest: /opt/sentinel/grafana/dashboards/
+    mode: "0644"
+  notify: Restart grafana
+
+- name: Run grafana
+  become: true
+  community.docker.docker_container:
+    name: sentinel-grafana
+    image: "{{ grafana_image }}"
+    state: started
+    restart_policy: unless-stopped
+    published_ports: ["3000:3000"]
+    env:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: "{{ grafana_admin_password }}"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+    volumes:
+      - /opt/sentinel/grafana/provisioning:/etc/grafana/provisioning:ro
+      - /opt/sentinel/grafana/dashboards:/var/lib/grafana/dashboards:ro

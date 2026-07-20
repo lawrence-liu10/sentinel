@@ -1,0 +1,77 @@
+# restart_postgres (risk tier: HIGH — human approval + evidence).
+# Stop the DB writers, bounce the Postgres container, wait for it to accept
+# connections, then bring the writers back and health-check them. Ordering
+# matters: writers down first so they don't hammer a DB mid-restart. Honors
+# --check (container state changes are reported-only; the readiness/health waits
+# are skipped so a dry-run changes nothing).
+#
+#   ansible-playbook playbooks/restart_postgres.yml
+# pg_writers = the services that hold DB connections (orders + checkout-worker).
+
+- name: Stop DB writers before bouncing Postgres
+  hosts: app
+  gather_facts: false
+  vars:
+    pg_writers: [orders-service, checkout-worker]
+  tasks:
+    - name: "Stop sentinel-{{ item }}"
+      when: services[item].host == inventory_hostname
+      become: true
+      community.docker.docker_container:
+        name: "sentinel-{{ item }}"
+        state: stopped
+      loop: "{{ pg_writers }}"
+
+- name: Restart Postgres
+  hosts: db
+  gather_facts: false
+  tasks:
+    - name: Restart the postgres container
+      become: true
+      community.docker.docker_container:
+        name: "{{ postgres_container }}"
+        state: started
+        restart: true
+
+    - name: Wait for Postgres to accept connections
+      when: not ansible_check_mode
+      become: true
+      ansible.builtin.command:
+        argv:
+          - docker
+          - exec
+          - "{{ postgres_container }}"
+          - pg_isready
+          - -U
+          - "{{ postgres_user }}"
+      register: pg_ready
+      until: pg_ready.rc == 0
+      retries: 15
+      delay: 2
+      changed_when: false
+
+- name: Bring DB writers back up
+  hosts: app
+  gather_facts: false
+  vars:
+    pg_writers: [orders-service, checkout-worker]
+  tasks:
+    - name: "Start sentinel-{{ item }}"
+      when: services[item].host == inventory_hostname
+      become: true
+      community.docker.docker_container:
+        name: "sentinel-{{ item }}"
+        state: started
+      loop: "{{ pg_writers }}"
+
+    - name: "Wait for {{ item }} /healthz to return 200"
+      when: services[item].host == inventory_hostname and not ansible_check_mode
+      ansible.builtin.uri:
+        url: "http://127.0.0.1:{{ services[item].port }}/healthz"
+        status_code: 200
+      register: health
+      until: health.status == 200
+      retries: 10
+      delay: 3
+      changed_when: false
+      loop: "{{ pg_writers }}"

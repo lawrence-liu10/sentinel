@@ -1,0 +1,91 @@
+# rollback_deploy (risk tier: HIGH — human approval + evidence).
+# Remediation for F3 (bad deploy crash-loops): redeploy the previous good tag
+# recorded in the `deploys` table, verify healthy, then record the rollback as a
+# new deploy row (so list_recent_deploys shows it). Honors --check: the DB read
+# still runs (safe), the redeploy/record are reported-only.
+#
+#   ansible-playbook playbooks/rollback_deploy.yml -e service=payments-service
+
+- name: Find the previous good deploy tag
+  hosts: db
+  gather_facts: false
+  tasks:
+    # OFFSET 1 skips the current (bad) deploy; LIMIT 1 takes the one before it.
+    - name: "Query previous tag for {{ service }}"
+      become: true
+      check_mode: false
+      ansible.builtin.command:
+        argv:
+          - docker
+          - exec
+          - "{{ postgres_container }}"
+          - psql
+          - -U
+          - "{{ postgres_user }}"
+          - -d
+          - "{{ postgres_db }}"
+          - -tAc
+          - >-
+            SELECT tag FROM deploys WHERE service = '{{ service }}'
+            ORDER BY deployed_at DESC OFFSET 1 LIMIT 1
+      register: prev_tag_q
+      changed_when: false
+
+    - name: Fail if there is no prior deploy to roll back to
+      ansible.builtin.assert:
+        that: prev_tag_q.stdout | trim | length > 0
+        fail_msg: "No prior deploy for {{ service }} to roll back to."
+
+    - name: Stash the rollback target tag
+      ansible.builtin.set_fact:
+        rollback_tag: "{{ prev_tag_q.stdout | trim }}"
+
+- name: Redeploy the previous tag
+  hosts: app
+  gather_facts: false
+  tasks:
+    - name: Roll back on the host that runs the service
+      when: inventory_hostname == services[service].host
+      block:
+        - name: "Redeploy {{ service }}:{{ hostvars['db-1'].rollback_tag }}"
+          ansible.builtin.include_role:
+            name: app_service
+          vars:
+            app_name: "{{ service }}"
+            app_tag: "{{ hostvars['db-1'].rollback_tag }}"
+            app_host_port: "{{ services[service].port }}"
+            app_memory: "{{ services[service].memory | default('') }}"
+            app_env: "{{ services[service].env }}"
+
+        - name: "Wait for {{ service }} /healthz to return 200"
+          when: not ansible_check_mode
+          ansible.builtin.uri:
+            url: "http://127.0.0.1:{{ services[service].port }}/healthz"
+            status_code: 200
+          register: health
+          until: health.status == 200
+          retries: 10
+          delay: 3
+          changed_when: false
+
+- name: Record the rollback as a new deploy
+  hosts: db
+  gather_facts: false
+  tasks:
+    - name: "Insert a deploys row for the rollback of {{ service }}"
+      become: true
+      ansible.builtin.command:
+        argv:
+          - docker
+          - exec
+          - "{{ postgres_container }}"
+          - psql
+          - -U
+          - "{{ postgres_user }}"
+          - -d
+          - "{{ postgres_db }}"
+          - -c
+          - >-
+            INSERT INTO deploys (service, tag, actor)
+            VALUES ('{{ service }}', '{{ rollback_tag }}', 'ansible-rollback')
+      changed_when: true

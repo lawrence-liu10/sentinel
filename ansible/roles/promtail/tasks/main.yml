@@ -1,0 +1,28 @@
+# promtail runs on every container host (app-1, app-2, db-1) — NOT on mon-1,
+# whose LGTM logs stay local (keeps the t3.medium lean).
+- name: Ensure promtail config dir
+  become: true
+  ansible.builtin.file:
+    path: /opt/sentinel/promtail
+    state: directory
+    mode: "0755"
+
+- name: Template promtail config
+  become: true
+  ansible.builtin.template:
+    src: promtail.yml.j2
+    dest: /opt/sentinel/promtail/promtail.yml
+    mode: "0644"
+  notify: Restart promtail
+
+- name: Run promtail
+  become: true
+  community.docker.docker_container:
+    name: sentinel-promtail
+    image: "{{ promtail_image }}"
+    state: started
+    restart_policy: unless-stopped
+    command: ["-config.file=/etc/promtail/promtail.yml"]
+    volumes:
+      - /opt/sentinel/promtail/promtail.yml:/etc/promtail/promtail.yml:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro

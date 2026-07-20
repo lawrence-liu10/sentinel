@@ -5,6 +5,10 @@ requires-python = ">=3.12,<3.13"
 dependencies = [
     "fastapi>=0.115",
     "uvicorn[standard]>=0.32",
+    "prometheus-client>=0.21",
+    "opentelemetry-sdk>=1.27",
+    "opentelemetry-exporter-otlp-proto-grpc>=1.27",
+    "opentelemetry-instrumentation-fastapi>=0.48b0",
 ]
 
 [dependency-groups]
@@ -14,7 +18,8 @@ dev = ["pytest>=8.3", "httpx>=0.28"]
 package = false
 
 [tool.pytest.ini_options]
-pythonpath = ["."]
+# ".." reaches app/ so the shared `common.telemetry` module resolves in tests.
+pythonpath = [".", ".."]
 
 [tool.ruff]
 line-length = 100

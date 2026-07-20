@@ -1,3 +1,4 @@
+# Build context is app/ (one level up) so we can COPY the shared common/ package.
 # Slim runtime image. Deps installed with uv into /app/.venv; no uv at runtime.
 FROM python:3.12-slim
 
@@ -5,11 +6,13 @@ COPY --from=ghcr.io/astral-sh/uv:0.11.28 /uv /bin/uv
 
 WORKDIR /app
 
-# Dependency layer — cached until pyproject.toml / uv.lock change.
-COPY pyproject.toml uv.lock ./
+# Dependency layer — cached until this service's pyproject.toml / uv.lock change.
+COPY checkout-worker/pyproject.toml checkout-worker/uv.lock ./
 RUN uv sync --frozen --no-dev
 
-COPY main.py ./
+# Shared instrumentation module, then the service entrypoint.
+COPY common/ ./common/
+COPY checkout-worker/main.py ./
 
 RUN useradd --create-home appuser && chown -R appuser /app
 USER appuser

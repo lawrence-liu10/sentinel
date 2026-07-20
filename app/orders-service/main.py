@@ -6,38 +6,14 @@ Env:
   PAYMENTS_TIMEOUT_MS  client timeout for the charge call, ms (default 2000).
 """
 
-import json
-import logging
 import os
-import sys
 
 import httpx
 import psycopg
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
-
-class JsonFormatter(logging.Formatter):
-    def format(self, record: logging.LogRecord) -> str:
-        entry = {
-            "ts": self.formatTime(record),
-            "level": record.levelname,
-            "service": record.name,
-            "msg": record.getMessage(),
-        }
-        if record.exc_info:
-            entry["exc"] = self.formatException(record.exc_info)
-        return json.dumps(entry)
-
-
-def setup_logging(name: str) -> logging.Logger:
-    handler = logging.StreamHandler(sys.stdout)
-    handler.setFormatter(JsonFormatter())
-    root = logging.getLogger()
-    root.handlers = [handler]
-    root.setLevel(logging.INFO)
-    return logging.getLogger(name)
-
+from common.telemetry import setup_logging, setup_telemetry
 
 log = setup_logging("orders-service")
 
@@ -46,6 +22,7 @@ PAYMENTS_URL = os.environ.get("PAYMENTS_URL", "http://localhost:8002")
 PAYMENTS_TIMEOUT_MS = int(os.environ.get("PAYMENTS_TIMEOUT_MS", "2000"))
 
 app = FastAPI(title="orders-service")
+setup_telemetry(app, "orders-service", instrument_httpx=True, instrument_psycopg=True)
 
 
 class OrderRequest(BaseModel):
@@ -96,6 +73,33 @@ def _set_status(order_id: int, status: str) -> None:
         cur.execute("UPDATE orders SET status = %s WHERE id = %s", (status, order_id))
 
 
+class FaultRequest(BaseModel):
+    type: str
+
+
+# Connections opened and deliberately never released (fault F2). Module-level so
+# they outlive the request and keep occupying Postgres slots until the container
+# restarts — which is exactly the correct remediation (restart_container).
+_leaked_conns: list = []
+
+
 @app.post("/admin/fault")
-def admin_fault() -> None:
-    raise HTTPException(status_code=501, detail="fault injection lands in Phase 3")
+def admin_fault(req: FaultRequest) -> dict:
+    if os.environ.get("FAULT_INJECTION_ENABLED") != "true":
+        raise HTTPException(status_code=403, detail="fault injection disabled")
+    if req.type == "conn_leak":
+        return _leak_connections()
+    raise HTTPException(status_code=400, detail=f"unknown fault type: {req.type}")
+
+
+def _leak_connections(max_conns: int = 500) -> dict:
+    """Open connections and never close them until Postgres refuses more, driving
+    pg_stat_activity to max_connections (PostgresConnExhaustion). The safety cap
+    just prevents an infinite loop against a DB with huge headroom; real
+    exhaustion trips first."""
+    while len(_leaked_conns) < max_conns:
+        try:
+            _leaked_conns.append(psycopg.connect(DATABASE_URL))
+        except psycopg.OperationalError:
+            break
+    return {"type": "conn_leak", "leaked": len(_leaked_conns)}

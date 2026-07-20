@@ -1,0 +1,33 @@
+# Background load generator on ctrl-1 — a tiny systemd daemon that POSTs
+# /checkout ~once a second so the app always has traffic (rate/latency alerts
+# need a denominator; faults are invisible on an idle app).
+- name: Ensure /opt/sentinel exists
+  become: true
+  ansible.builtin.file:
+    path: /opt/sentinel
+    state: directory
+    mode: "0755"
+
+- name: Install the load generator script
+  become: true
+  ansible.builtin.template:
+    src: loadgen.sh.j2
+    dest: /opt/sentinel/loadgen.sh
+    mode: "0755"
+  notify: Restart loadgen
+
+- name: Install the load generator service unit
+  become: true
+  ansible.builtin.copy:
+    src: sentinel-loadgen.service
+    dest: /etc/systemd/system/sentinel-loadgen.service
+    mode: "0644"
+  notify: Restart loadgen
+
+- name: Enable and start the load generator
+  become: true
+  ansible.builtin.systemd_service:
+    name: sentinel-loadgen
+    enabled: true
+    state: started
+    daemon_reload: true

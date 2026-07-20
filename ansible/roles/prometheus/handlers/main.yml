@@ -1,0 +1,6 @@
+- name: Restart prometheus
+  become: true
+  community.docker.docker_container:
+    name: sentinel-prometheus
+    state: started
+    restart: true

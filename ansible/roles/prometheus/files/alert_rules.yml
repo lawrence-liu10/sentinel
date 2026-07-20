@@ -1,0 +1,69 @@
+# Sentinel alert rules — the five names are a CONTRACT (contracts §6); evals
+# score against them, so don't rename casually. `for:` windows are kept short
+# (demo speed over flappiness — see the writeup).
+#
+# Metric names verified live against the deployed stack (2026-07-19):
+#   * container_oom_events_total, container_memory_working_set_bytes — present.
+#   * pg_stat_activity_count, pg_settings_max_connections — present.
+#   * container_restart_count — NOT exposed by cAdvisor v0.55.1, so restarts are
+#     detected via changes(container_start_time_seconds[...]) instead.
+# `for:` windows still want a live fault→fire timing pass in Phase 3.
+groups:
+  - name: sentinel
+    rules:
+      - alert: HighLatencyP95
+        expr: >-
+          histogram_quantile(0.95, sum by (le) (rate(
+          http_request_duration_seconds_bucket{service="api-gateway"}[5m]))) > 1
+        for: 1m
+        labels:
+          service: api-gateway
+          severity: warning
+        annotations:
+          summary: "api-gateway p95 latency above 1s"
+          description: "95th-pct request duration on api-gateway exceeded 1s."
+
+      - alert: HighErrorRate
+        expr: >-
+          rate(http_requests_total{status=~"5..",service="api-gateway"}[5m])
+          / rate(http_requests_total{service="api-gateway"}[5m]) > 0.2
+        for: 1m
+        labels:
+          service: api-gateway
+          severity: critical
+        annotations:
+          summary: "api-gateway 5xx ratio above 20%"
+          description: "More than 20% of api-gateway responses are 5xx."
+
+      - alert: ContainerRestartLoop
+        # cAdvisor v0.55.1 has no restart counter; a crash-loop bumps the
+        # container's start time repeatedly, so count those changes instead.
+        expr: >-
+          changes(container_start_time_seconds{name=~"sentinel-.*"}[10m]) > 2
+        for: 0m
+        labels:
+          service: payments-service
+          severity: critical
+        annotations:
+          summary: "A sentinel container is crash-looping"
+          description: "{{ $labels.name }} restarted >3 times in 10m."
+
+      - alert: ContainerOOMKilled
+        expr: increase(container_oom_events_total{name=~"sentinel-.*"}[10m]) > 0
+        for: 0m
+        labels:
+          service: checkout-worker
+          severity: critical
+        annotations:
+          summary: "A sentinel container was OOM-killed"
+          description: "{{ $labels.name }} hit its memory limit and was killed."
+
+      - alert: PostgresConnExhaustion
+        expr: pg_stat_activity_count / pg_settings_max_connections > 0.9
+        for: 1m
+        labels:
+          service: orders-service
+          severity: critical
+        annotations:
+          summary: "Postgres connection pool near exhaustion"
+          description: "Active connections above 90% of max_connections."

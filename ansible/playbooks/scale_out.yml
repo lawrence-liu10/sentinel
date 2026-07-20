@@ -1,0 +1,43 @@
+# scale_out (risk tier: LOW — auto-execute, logged).
+# Runs one extra replica of a service on the OTHER app host, published at
+# port+1000. Deliberately minimal: no orchestrator, and the gateway is
+# single-upstream so this does not load-balance — the replica just proves an
+# extra instance can be stood up. It exists to make the risk-tier table real and
+# is exactly reversed by scale_down. Idempotent; honors --check.
+#
+#   ansible-playbook playbooks/scale_out.yml -e service=orders-service
+- name: Add one replica of a service on the other app host
+  hosts: app
+  gather_facts: false
+  vars:
+    other_host: >-
+      {{ ['app-1', 'app-2'] | difference([services[service].host]) | first }}
+    replica_port: "{{ services[service].port | int + 1000 }}"
+  tasks:
+    - name: Stand up the replica on the other host
+      when: inventory_hostname == other_host
+      block:
+        - name: "Start sentinel-{{ service }}-replica on :{{ replica_port }}"
+          become: true
+          community.docker.docker_container:
+            name: "sentinel-{{ service }}-replica"
+            image: >-
+              ghcr.io/{{ ghcr_owner }}/sentinel-{{ service }}:{{ image_tag }}
+            pull: true
+            recreate: true
+            state: started
+            restart_policy: unless-stopped
+            published_ports: ["{{ replica_port }}:8000"]
+            env: "{{ services[service].env }}"
+            memory: "{{ services[service].memory | default(omit, true) }}"
+
+        - name: "Wait for the replica /healthz to return 200"
+          when: not ansible_check_mode
+          ansible.builtin.uri:
+            url: "http://127.0.0.1:{{ replica_port }}/healthz"
+            status_code: 200
+          register: health
+          until: health.status == 200
+          retries: 10
+          delay: 3
+          changed_when: false
