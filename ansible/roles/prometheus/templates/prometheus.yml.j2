@@ -9,8 +9,10 @@ alerting:
     - static_configs:
         - targets: ["localhost:9093"]
 
-# Alert rules arrive in Phase 3.
-rule_files: []
+# Sentinel alert rules (the five contract alerts, §6). Mounted read-only into
+# the container by the prometheus role.
+rule_files:
+  - /etc/prometheus/alert_rules.yml
 
 scrape_configs:
   - job_name: prometheus

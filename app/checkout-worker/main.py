@@ -10,11 +10,13 @@ Env:
 
 import asyncio
 import os
+import threading
 from contextlib import asynccontextmanager
 
 import psycopg
 from fastapi import FastAPI, HTTPException
 from prometheus_client import Counter
+from pydantic import BaseModel
 
 from common.telemetry import setup_logging, setup_telemetry
 
@@ -67,6 +69,28 @@ def healthz() -> dict:
     return {"status": "ok"}
 
 
-@app.post("/admin/fault")
-def admin_fault() -> None:
-    raise HTTPException(status_code=501, detail="fault injection lands in Phase 3")
+class FaultRequest(BaseModel):
+    type: str
+
+
+# Ever-growing buffer that drives the worker past its 256m container limit so the
+# cgroup OOM-kills the process (fault F4 / ContainerOOMKilled). A restart clears
+# it — the correct remediation (restart_container).
+_mem_hog: list[bytes] = []
+
+
+def _hog_memory(chunk_mb: int = 50) -> None:
+    """Allocate until the container's memory limit kills the process. Runs in a
+    background thread so the request returns before the OOM lands."""
+    while True:
+        _mem_hog.append(b"\0" * (chunk_mb * 1024 * 1024))
+
+
+@app.post("/admin/fault", status_code=202)
+def admin_fault(req: FaultRequest) -> dict:
+    if os.environ.get("FAULT_INJECTION_ENABLED") != "true":
+        raise HTTPException(status_code=403, detail="fault injection disabled")
+    if req.type == "mem_hog":
+        threading.Thread(target=_hog_memory, daemon=True).start()
+        return {"type": "mem_hog", "status": "allocating"}
+    raise HTTPException(status_code=400, detail=f"unknown fault type: {req.type}")

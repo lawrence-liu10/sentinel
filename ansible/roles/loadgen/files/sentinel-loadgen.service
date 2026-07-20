@@ -1,0 +1,13 @@
+[Unit]
+Description=Sentinel background load generator (~1 rps /checkout)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/opt/sentinel/loadgen.sh
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

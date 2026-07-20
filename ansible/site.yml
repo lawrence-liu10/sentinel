@@ -27,3 +27,10 @@
 
 - name: Observability stack (LGTM)
   ansible.builtin.import_playbook: observability.yml
+
+# Steady background traffic so rate/latency alerts have a baseline to fire
+# against. Runs last: the app + gateway must be up for /checkout to succeed.
+- name: Background load generator (ctrl-1)
+  hosts: control
+  roles:
+    - loadgen

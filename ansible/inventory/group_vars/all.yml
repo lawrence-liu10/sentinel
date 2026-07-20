@@ -1,0 +1,85 @@
+# Shared vars. Secrets are NEVER here; pg_password comes from SSM at deploy.
+aws_region: us-east-1
+ghcr_owner: lawrence-liu10
+
+# Image tag to deploy; override with -e image_tag=v<N>.
+image_tag: latest
+
+# Postgres (pgvector) — pinned at the phase that installs it.
+postgres_image: pgvector/pgvector:pg16
+postgres_container: sentinel-postgres
+postgres_db: sentinel
+postgres_user: sentinel
+
+# --- Observability stack (Phase 2) — pinned image tags/versions ---
+# Verified against the registries on 2026-07-13. LGTM config schemas shift
+# between majors, so these are exact pins, not floating tags.
+prometheus_image: prom/prometheus:v3.13.1
+alertmanager_image: prom/alertmanager:v0.33.1
+grafana_image: grafana/grafana:12.3.8
+loki_image: grafana/loki:3.7.3
+promtail_image: grafana/promtail:3.6.11
+tempo_image: grafana/tempo:2.8.1
+cadvisor_image: gcr.io/cadvisor/cadvisor:v0.55.1
+postgres_exporter_image: quay.io/prometheuscommunity/postgres-exporter:v0.20.1
+node_exporter_version: "1.12.0"
+
+# Retention — kept tight so mon-1 (t3.medium) stays under memory (risk reg. #2).
+prometheus_retention_time: 3d
+prometheus_retention_size: 2GB
+loki_retention_hours: 72
+tempo_retention_hours: 48
+
+# Host private IPs — resolved from the Terraform-generated inventory, never
+# hardcoded. mon-1 is where every service ships metrics/logs/traces.
+mon_ip: "{{ hostvars['mon-1'].private_ip }}"
+db_ip: "{{ hostvars['db-1'].private_ip }}"
+app1_ip: "{{ hostvars['app-1'].private_ip }}"
+app2_ip: "{{ hostvars['app-2'].private_ip }}"
+
+# Runtime connection strings shared by the deploy and every remediation playbook
+# that redeploys a service. Jinja here is lazy: the SSM secret lookup runs only
+# when a play references database_url (the secret never lands on disk or logs).
+otlp_endpoint: "http://{{ mon_ip }}:4317"
+pg_password: >-
+  {{ lookup('amazon.aws.aws_ssm', '/sentinel/pg_password', region=aws_region) }}
+database_url: >-
+  postgresql://{{ postgres_user }}:{{ pg_password }}@{{ db_ip
+  }}:5432/{{ postgres_db }}
+
+# --- Service topology + canonical config (Phase 3), a CONTRACT (01-contracts.md
+# §1). Single source of truth for each service's host, host port, and canonical
+# env. deploy.yml and the remediation playbooks (fix_config, rollback_deploy,
+# scale_out) all read from here, so config drift has exactly one place to be
+# corrected from — the whole point of fix_config.
+services:
+  api-gateway:
+    host: app-1
+    port: 8000
+    env:
+      ORDERS_URL: "http://{{ app1_ip }}:8001"
+      PAYMENTS_TIMEOUT_MS: "2000"
+      OTEL_EXPORTER_OTLP_ENDPOINT: "{{ otlp_endpoint }}"
+  orders-service:
+    host: app-1
+    port: 8001
+    env:
+      DATABASE_URL: "{{ database_url }}"
+      PAYMENTS_URL: "http://{{ app2_ip }}:8002"
+      PAYMENTS_TIMEOUT_MS: "2000"
+      OTEL_EXPORTER_OTLP_ENDPOINT: "{{ otlp_endpoint }}"
+      FAULT_INJECTION_ENABLED: "true"
+  payments-service:
+    host: app-2
+    port: 8002
+    env:
+      REQUIRED_SETTING: "ok"
+      OTEL_EXPORTER_OTLP_ENDPOINT: "{{ otlp_endpoint }}"
+  checkout-worker:
+    host: app-2
+    port: 8003
+    memory: "256m"
+    env:
+      DATABASE_URL: "{{ database_url }}"
+      OTEL_EXPORTER_OTLP_ENDPOINT: "{{ otlp_endpoint }}"
+      FAULT_INJECTION_ENABLED: "true"

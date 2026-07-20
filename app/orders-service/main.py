@@ -73,6 +73,33 @@ def _set_status(order_id: int, status: str) -> None:
         cur.execute("UPDATE orders SET status = %s WHERE id = %s", (status, order_id))
 
 
+class FaultRequest(BaseModel):
+    type: str
+
+
+# Connections opened and deliberately never released (fault F2). Module-level so
+# they outlive the request and keep occupying Postgres slots until the container
+# restarts — which is exactly the correct remediation (restart_container).
+_leaked_conns: list = []
+
+
 @app.post("/admin/fault")
-def admin_fault() -> None:
-    raise HTTPException(status_code=501, detail="fault injection lands in Phase 3")
+def admin_fault(req: FaultRequest) -> dict:
+    if os.environ.get("FAULT_INJECTION_ENABLED") != "true":
+        raise HTTPException(status_code=403, detail="fault injection disabled")
+    if req.type == "conn_leak":
+        return _leak_connections()
+    raise HTTPException(status_code=400, detail=f"unknown fault type: {req.type}")
+
+
+def _leak_connections(max_conns: int = 500) -> dict:
+    """Open connections and never close them until Postgres refuses more, driving
+    pg_stat_activity to max_connections (PostgresConnExhaustion). The safety cap
+    just prevents an infinite loop against a DB with huge headroom; real
+    exhaustion trips first."""
+    while len(_leaked_conns) < max_conns:
+        try:
+            _leaked_conns.append(psycopg.connect(DATABASE_URL))
+        except psycopg.OperationalError:
+            break
+    return {"type": "conn_leak", "leaked": len(_leaked_conns)}

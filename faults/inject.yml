@@ -1,0 +1,128 @@
+# Fault injection harness: the 5-fault catalog (contracts §6), ground truth for
+# evals. One entry point (drive it via `make fault F=<label>`):
+#
+#   ansible-playbook ../faults/inject.yml -e fault=<label>
+#
+# Each fault fires exactly one alert; the manual fix is `make heal F=<label>`.
+# Env faults recreate the container from the canonical group_vars env plus/minus
+# the one bad value, so a clean redeploy heals it. F2/F4 are runtime-only: they
+# hit /admin/fault and a restart clears them. Same inventory/group_vars as
+# deploy, so `services` resolves.
+
+- name: Validate the requested fault and announce the expected signal
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    fault_alerts:
+      payments_latency: HighLatencyP95
+      db_conn_leak: PostgresConnExhaustion
+      bad_deploy: ContainerRestartLoop
+      container_oom: ContainerOOMKilled
+      config_drift: HighErrorRate
+  tasks:
+    - name: Fault label must be in the catalog
+      ansible.builtin.assert:
+        that: fault is defined and fault in fault_alerts
+        fail_msg: "unknown fault '{{ fault | default('') }}' (see the catalog)."
+
+    - name: Announce the expected alert + heal command
+      ansible.builtin.debug:
+        msg: >-
+          Injecting '{{ fault }}' → expect {{ fault_alerts[fault] }} within ~3
+          min. Heal with: make heal F={{ fault }}
+
+- name: Inject the fault on the app fleet
+  hosts: app
+  gather_facts: false
+  tasks:
+    # F1 — payments answers 3s slow: gateway p95 climbs, HighLatencyP95 fires.
+    - name: "F1 payments_latency — recreate payments with 3s latency"
+      when:
+        - fault == 'payments_latency'
+        - inventory_hostname == services['payments-service'].host
+      ansible.builtin.include_role:
+        name: app_service
+      vars:
+        app_name: payments-service
+        app_host_port: "{{ services['payments-service'].port }}"
+        app_env: >-
+          {{ services['payments-service'].env
+             | combine({'FAULT_LATENCY_MS': '3000'}) }}
+
+    # F2 — orders grabs Postgres connections and never releases them.
+    - name: "F2 db_conn_leak — leak DB connections on orders"
+      when:
+        - fault == 'db_conn_leak'
+        - inventory_hostname == services['orders-service'].host
+      ansible.builtin.uri:
+        url: >-
+          http://127.0.0.1:{{ services['orders-service'].port }}/admin/fault
+        method: POST
+        body_format: json
+        body: {"type": "conn_leak"}
+        status_code: 200
+
+    # F3 — payments ships without REQUIRED_SETTING, exits on boot (crash loop).
+    - name: "F3 bad_deploy — redeploy payments missing REQUIRED_SETTING"
+      when:
+        - fault == 'bad_deploy'
+        - inventory_hostname == services['payments-service'].host
+      ansible.builtin.include_role:
+        name: app_service
+      vars:
+        app_name: payments-service
+        app_host_port: "{{ services['payments-service'].port }}"
+        app_env: >-
+          {{ services['payments-service'].env | dict2items
+             | rejectattr('key', 'equalto', 'REQUIRED_SETTING') | items2dict }}
+
+    # F4 — checkout-worker allocates past its 256m limit; cgroup OOM-kills it.
+    - name: "F4 container_oom — memory-hog checkout-worker"
+      when:
+        - fault == 'container_oom'
+        - inventory_hostname == services['checkout-worker'].host
+      ansible.builtin.uri:
+        url: >-
+          http://127.0.0.1:{{ services['checkout-worker'].port }}/admin/fault
+        method: POST
+        body_format: json
+        body: {"type": "mem_hog"}
+        status_code: 202
+
+    # F5 — gateway's downstream timeout drifts to 1ms: payments calls 5xx out.
+    - name: "F5 config_drift — recreate api-gateway with 1ms timeout"
+      when:
+        - fault == 'config_drift'
+        - inventory_hostname == services['api-gateway'].host
+      ansible.builtin.include_role:
+        name: app_service
+      vars:
+        app_name: api-gateway
+        app_host_port: "{{ services['api-gateway'].port }}"
+        app_env: >-
+          {{ services['api-gateway'].env
+             | combine({'PAYMENTS_TIMEOUT_MS': '1'}) }}
+
+- name: Record the bad deploy so it surfaces in list_recent_deploys
+  hosts: db
+  gather_facts: false
+  tasks:
+    - name: "F3 — record a '<tag>-bad' deploys row for payments"
+      when: fault == 'bad_deploy'
+      become: true
+      ansible.builtin.command:
+        argv:
+          - docker
+          - exec
+          - "{{ postgres_container }}"
+          - psql
+          - -U
+          - "{{ postgres_user }}"
+          - -d
+          - "{{ postgres_db }}"
+          - -c
+          - >-
+            INSERT INTO deploys (service, tag, actor)
+            VALUES ('payments-service', '{{ image_tag }}-bad', 'fault-inject')
+      changed_when: true

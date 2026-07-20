@@ -1,0 +1,33 @@
+# fix_config (risk tier: HIGH — human approval + evidence).
+# Remediation for F1 (payments latency env) and F5 (gateway timeout drift):
+# re-deploy the service from its canonical group_vars config, recreating the
+# container with the sanctioned env, erasing whatever drift was injected
+# (Ansible-as-source-of-truth). Idempotent; honors --check (dry-run).
+#
+#   ansible-playbook playbooks/fix_config.yml -e service=api-gateway
+- name: Restore a service to its Ansible-canonical config
+  hosts: app
+  gather_facts: false
+  tasks:
+    - name: Re-deploy on the host that runs the service
+      when: inventory_hostname == services[service].host
+      block:
+        - name: "Recreate sentinel-{{ service }} from canonical group_vars"
+          ansible.builtin.include_role:
+            name: app_service
+          vars:
+            app_name: "{{ service }}"
+            app_host_port: "{{ services[service].port }}"
+            app_memory: "{{ services[service].memory | default('') }}"
+            app_env: "{{ services[service].env }}"
+
+        - name: "Wait for {{ service }} /healthz to return 200"
+          when: not ansible_check_mode
+          ansible.builtin.uri:
+            url: "http://127.0.0.1:{{ services[service].port }}/healthz"
+            status_code: 200
+          register: health
+          until: health.status == 200
+          retries: 10
+          delay: 3
+          changed_when: false

@@ -22,6 +22,14 @@
     mode: "0644"
   notify: Restart prometheus
 
+- name: Copy alert rules
+  become: true
+  ansible.builtin.copy:
+    src: alert_rules.yml
+    dest: /opt/sentinel/prometheus/config/alert_rules.yml
+    mode: "0644"
+  notify: Restart prometheus
+
 - name: Run prometheus
   become: true
   community.docker.docker_container:
@@ -38,4 +46,5 @@
       - --web.enable-lifecycle
     volumes:
       - /opt/sentinel/prometheus/config/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - /opt/sentinel/prometheus/config/alert_rules.yml:/etc/prometheus/alert_rules.yml:ro
       - /opt/sentinel/prometheus/data:/prometheus
