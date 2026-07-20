@@ -4,10 +4,13 @@ global:
   scrape_interval: 15s
   evaluation_interval: 15s
 
+# Alertmanager runs as a separate container on mon-1; reach it via the host's
+# private IP + published port (localhost inside this container is Prometheus
+# itself, not the host — that silently dropped every alert in Phase 2).
 alerting:
   alertmanagers:
     - static_configs:
-        - targets: ["localhost:9093"]
+        - targets: ["{{ mon_ip }}:9093"]
 
 # Sentinel alert rules (the five contract alerts, §6). Mounted read-only into
 # the container by the prometheus role.
