@@ -2,11 +2,12 @@
 # score against them, so don't rename casually. `for:` windows are kept short
 # (demo speed over flappiness — see the writeup).
 #
-# Metric names verified live against the deployed stack (2026-07-19):
-#   * container_oom_events_total, container_memory_working_set_bytes — present.
-#   * pg_stat_activity_count, pg_settings_max_connections — present.
-#   * container_restart_count — NOT exposed by cAdvisor v0.55.1, so restarts are
-#     detected via changes(container_start_time_seconds[...]) instead.
+# cAdvisor v0.55.1 on cgroup v2 exposes no usable restart or OOM-event counter
+# (verified live 2026-07-20): container_oom_events_total stays 0, and
+# changes(container_start_time_seconds[...]) misses Docker backoff-restarts. So
+# the two container alerts detect the consequence on signals that do work — a
+# down scrape target (ContainerRestartLoop) and working-set-vs-limit pressure
+# (ContainerOOMKilled). See contracts §6.
 # `for:` windows still want a live fault→fire timing pass in Phase 3.
 groups:
   - name: sentinel
@@ -36,27 +37,36 @@ groups:
           description: "More than 20% of api-gateway responses are 5xx."
 
       - alert: ContainerRestartLoop
-        # cAdvisor v0.55.1 has no restart counter; a crash-loop bumps the
-        # container's start time repeatedly, so count those changes instead.
-        expr: >-
-          changes(container_start_time_seconds{name=~"sentinel-.*"}[10m]) > 2
-        for: 0m
+        # A crash-looping service never boots far enough to serve /metrics, so
+        # its scrape target is DOWN. cAdvisor's restart signals don't survive
+        # Docker backoff-restarts (see header), so detect the down target
+        # instead. No static service label — let the target's own `service`
+        # flow through so the agent knows which service to roll back.
+        expr: up{job="services"} == 0
+        for: 2m
         labels:
-          service: payments-service
           severity: critical
         annotations:
-          summary: "A sentinel container is crash-looping"
-          description: "{{ $labels.name }} restarted >3 times in 10m."
+          summary: "A sentinel service is down (crash-looping)"
+          description: >-
+            {{ $labels.service }} scrape target down for 2m
+            (crash-loop / failed boot).
 
       - alert: ContainerOOMKilled
-        expr: increase(container_oom_events_total{name=~"sentinel-.*"}[10m]) > 0
-        for: 0m
+        # cAdvisor's OOM counter is stuck at 0 on cgroup v2 (see header), so
+        # detect the memory pressure instead: working set near the container's
+        # limit. `> 0` drops unlimited containers (limit 0 ⇒ divide-by-zero).
+        expr: >-
+          container_memory_working_set_bytes{name=~"sentinel-.*"}
+          / (container_spec_memory_limit_bytes{name=~"sentinel-.*"} > 0) > 0.8
+        for: 1m
         labels:
           service: checkout-worker
           severity: critical
         annotations:
-          summary: "A sentinel container was OOM-killed"
-          description: "{{ $labels.name }} hit its memory limit and was killed."
+          summary: "A sentinel container is at its memory limit"
+          description: >-
+            {{ $labels.name }} working set above 80% of its memory limit.
 
       - alert: PostgresConnExhaustion
         # pg_stat_activity_count is per-{datname,state}; sum it and match the
