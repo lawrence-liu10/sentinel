@@ -1,0 +1,26 @@
+[project]
+name = "sentinel-agent"
+version = "0.1.0"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "litellm>=1.50",
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.32",
+    "psycopg[binary]>=3.2",
+    "pydantic>=2.9",
+    "httpx>=0.28",
+    "prometheus-client>=0.21",
+]
+
+[dependency-groups]
+dev = ["pytest>=8.3", "respx>=0.21", "httpx>=0.28"]
+
+[tool.uv]
+package = false
+
+[tool.pytest.ini_options]
+# "." makes the `sentinel` package importable in tests without installing it.
+pythonpath = ["."]
+
+[tool.ruff]
+line-length = 100

@@ -1,0 +1,35 @@
+# LiteLLM gateway (ctrl-1 :4000). The agent targets model *aliases* only
+# (sentinel-agent, sentinel-embed); the concrete provider bindings live here so a
+# provider switch is a one-line config change + restart (the failover demo).
+#
+# Concrete Bedrock inference-profile IDs are pinned at Stage B deploy, once the
+# account's Bedrock model access is confirmed (risk register #1). Until then these
+# are placeholders — the agent code is provider-agnostic.
+
+model_list:
+  # --- Agent reasoning model: Bedrock primary, direct Anthropic failover ---
+  - model_name: sentinel-agent
+    litellm_params:
+      model: bedrock/us.anthropic.claude-sonnet-5-v1:0  # TODO(stage-b): pin exact profile id
+      aws_region_name: us-east-1
+  - model_name: sentinel-agent
+    litellm_params:
+      model: anthropic/claude-sonnet-5  # TODO(stage-b): pin exact model id
+      api_key: os.environ/ANTHROPIC_API_KEY
+
+  # --- Embeddings (Phase 5 RAG); 1024-dim, matches chunks.embedding (contracts §4) ---
+  - model_name: sentinel-embed
+    litellm_params:
+      model: bedrock/amazon.titan-embed-text-v2:0
+      aws_region_name: us-east-1
+
+# Retry within a model, then fail over Bedrock -> Anthropic. Log which provider
+# served each call (measured-failover talking point).
+router_settings:
+  num_retries: 3
+  fallbacks:
+    - sentinel-agent: ["sentinel-agent"]
+
+litellm_settings:
+  drop_params: true
+  request_timeout: 120
