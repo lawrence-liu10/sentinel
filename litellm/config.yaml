@@ -2,19 +2,23 @@
 # (sentinel-agent, sentinel-embed); the concrete provider bindings live here so a
 # provider switch is a one-line config change + restart (the failover demo).
 #
-# Concrete Bedrock inference-profile IDs are pinned at Stage B deploy, once the
-# account's Bedrock model access is confirmed (risk register #1). Until then these
-# are placeholders — the agent code is provider-agnostic.
+# Bedrock IDs pinned at Stage B deploy (2026-07, account 710119225808, us-east-1),
+# once the account's Bedrock model access was confirmed (risk register #1). The
+# agent code is provider-agnostic — it only ever sees the `sentinel-agent` alias.
 
 model_list:
   # --- Agent reasoning model: Bedrock primary, direct Anthropic failover ---
+  # Sonnet 5 on Bedrock is served only through the cross-region inference profile
+  # (us.* routes to us-east-1/2/west-2); the ctrl IAM role grants the profile +
+  # those regions' foundation-models. Credentials come from ctrl-1's instance
+  # profile via IMDS (the container runs with host networking to reach it).
   - model_name: sentinel-agent
     litellm_params:
-      model: bedrock/us.anthropic.claude-sonnet-5-v1:0  # TODO(stage-b): pin exact profile id
+      model: bedrock/us.anthropic.claude-sonnet-5
       aws_region_name: us-east-1
   - model_name: sentinel-agent
     litellm_params:
-      model: anthropic/claude-sonnet-5  # TODO(stage-b): pin exact model id
+      model: anthropic/claude-sonnet-5
       api_key: os.environ/ANTHROPIC_API_KEY
 
   # --- Embeddings (Phase 5 RAG); 1024-dim, matches chunks.embedding (contracts §4) ---

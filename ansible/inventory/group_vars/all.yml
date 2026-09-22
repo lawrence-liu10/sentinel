@@ -24,6 +24,16 @@ cadvisor_image: gcr.io/cadvisor/cadvisor:v0.55.1
 postgres_exporter_image: quay.io/prometheuscommunity/postgres-exporter:v0.20.1
 node_exporter_version: "1.12.0"
 
+# --- Agent control plane (Phase 4) — pinned images ---
+# LiteLLM gateway: main-stable is upstream's recommended prod tag but it rolls,
+# so pin the digest for reproducibility (resolved 2026-07-26, v1.93 line).
+litellm_image: >-
+  ghcr.io/berriai/litellm@sha256:a1745e629abfb17d434426ff48b115f54f4f4c4a0f5af241de569e93c63c411e
+litellm_container: sentinel-litellm
+# Agent image built by CI to GHCR (context = repo root); tag tracks image_tag.
+agent_image: "ghcr.io/{{ ghcr_owner }}/sentinel-agent:{{ image_tag }}"
+agent_container: sentinel-agent
+
 # Retention — kept tight so mon-1 (t3.medium) stays under memory (risk reg. #2).
 prometheus_retention_time: 3d
 prometheus_retention_size: 2GB

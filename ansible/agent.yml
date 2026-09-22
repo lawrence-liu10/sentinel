@@ -1,0 +1,38 @@
+# Phase 4 control plane — apply the agent schema to Postgres (db-1), then deploy
+# the LiteLLM gateway + the Sentinel agent to ctrl-1 (replacing the Phase 3
+# webhook-stub on :8080). Run after site.yml + observability.yml: the app and
+# LGTM stack must be up for the agent to query, and its image must be built by
+# CI first.
+#
+#   ansible-playbook agent.yml
+
+- name: Agent schema on Postgres (db-1)
+  hosts: db
+  tasks:
+    - name: Copy the agent schema
+      become: true
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/../agent/sql/schema.sql"
+        dest: /opt/sentinel/agent-schema.sql
+        mode: "0644"
+
+    # Idempotent DDL (CREATE ... IF NOT EXISTS), so re-applying on every deploy
+    # is a no-op; ON_ERROR_STOP makes a real failure fail the play.
+    - name: Apply the agent schema
+      become: true
+      ansible.builtin.shell: >-
+        docker exec -i {{ postgres_container }}
+        psql -v ON_ERROR_STOP=1 -U {{ postgres_user }} -d {{ postgres_db }}
+        < /opt/sentinel/agent-schema.sql
+      changed_when: false
+
+- name: LiteLLM gateway + Sentinel agent (ctrl-1)
+  hosts: control
+  roles:
+    # ctrl-1 was never dockerized: site.yml's docker play covers app:db:monitoring
+    # and Phase 3 ran the webhook stub as a bare process. LiteLLM + the agent are
+    # the first containers on this host, so it needs the engine (and the python
+    # docker SDK the community.docker modules run against) first.
+    - docker
+    - litellm
+    - agent

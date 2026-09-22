@@ -1,0 +1,45 @@
+# LiteLLM gateway on ctrl-1 (:4000). The agent names model aliases only; the
+# concrete provider bindings live in litellm/config.yaml, so switching provider
+# is a one-line config change + restart (the failover demo).
+#
+# Host networking is deliberate: the Bedrock (primary) path uses boto3, which
+# needs ctrl-1's instance-profile creds from IMDS. The fleet's IMDSv2 uses a
+# default hop limit of 1, which a bridge-networked container can't reach — host
+# networking puts the process one hop from IMDS, same as the host. It also
+# publishes :4000 on the host; the SG keeps that same-host-only (agent ->
+# localhost).
+- name: Ensure litellm config dir
+  become: true
+  ansible.builtin.file:
+    path: /opt/sentinel/litellm
+    state: directory
+    mode: "0755"
+
+- name: Template litellm config
+  become: true
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../litellm/config.yaml"
+    dest: /opt/sentinel/litellm/config.yaml
+    mode: "0644"
+  notify: Restart litellm
+
+# Anthropic key backs the failover deployment only (Bedrock is primary). no_log
+# keeps the secret out of Ansible output; it reaches the container via env, the
+# one place LiteLLM reads it (never written to disk).
+- name: Run litellm gateway
+  become: true
+  no_log: true
+  community.docker.docker_container:
+    name: "{{ litellm_container }}"
+    image: "{{ litellm_image }}"
+    state: started
+    restart_policy: unless-stopped
+    network_mode: host
+    command: "--config /app/config.yaml --port 4000 --num_workers 1"
+    env:
+      AWS_REGION: "{{ aws_region }}"
+      ANTHROPIC_API_KEY: >-
+        {{ lookup('amazon.aws.aws_ssm', '/sentinel/anthropic_api_key',
+        region=aws_region) }}
+    volumes:
+      - /opt/sentinel/litellm/config.yaml:/app/config.yaml:ro

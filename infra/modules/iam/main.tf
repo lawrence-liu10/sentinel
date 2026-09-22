@@ -12,7 +12,16 @@ data "aws_region" "current" {}
 
 locals {
   ssm_params_arn = "arn:aws:ssm:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:parameter/sentinel/*"
-  bedrock_models = "arn:aws:bedrock:${data.aws_region.current.name}::foundation-model/*"
+
+  # The agent runs Sonnet 5 on Bedrock, which is served only through a
+  # cross-region inference profile (us.anthropic.*). Invoking through a profile
+  # requires BOTH the profile resource AND the foundation-model in every region
+  # the profile routes to — so grant exactly those three regions, not a wildcard.
+  bedrock_regions = ["us-east-1", "us-east-2", "us-west-2"]
+  bedrock_resources = concat(
+    [for r in local.bedrock_regions : "arn:aws:bedrock:${r}::foundation-model/*"],
+    ["arn:aws:bedrock:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:inference-profile/us.anthropic.*"],
+  )
 }
 
 # EC2 service may assume these roles.
@@ -62,7 +71,7 @@ data "aws_iam_policy_document" "ctrl_extra" {
   statement {
     sid       = "InvokeBedrock"
     actions   = ["bedrock:InvokeModel", "bedrock:InvokeModelWithResponseStream"]
-    resources = [local.bedrock_models]
+    resources = local.bedrock_resources
   }
   statement {
     sid       = "DescribeInstances"

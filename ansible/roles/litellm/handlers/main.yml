@@ -1,0 +1,7 @@
+# Config is bind-mounted, so a restart re-reads it (no recreate needed).
+- name: Restart litellm
+  become: true
+  community.docker.docker_container:
+    name: "{{ litellm_container }}"
+    state: started
+    restart: true

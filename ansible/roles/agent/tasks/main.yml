@@ -1,0 +1,89 @@
+# The Sentinel agent on ctrl-1 (:8080) — replaces the Phase 3 webhook-stub. Host
+# networking, like LiteLLM: its remediation playbooks do amazon.aws.aws_ssm
+# lookups (pg_password) via boto3, which needs ctrl-1's instance-profile creds
+# from IMDS (unreachable from a bridge-net container at hop limit 1). It also
+# SSHes to app hosts, so the fleet key is fetched from SSM, mounted read-only.
+- name: Ensure agent dirs
+  become: true
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: directory
+    owner: "1000"
+    group: "1000"
+    mode: "{{ item.mode }}"
+  loop:
+    - path: /opt/sentinel/agent
+      mode: "0755"
+    - path: /opt/sentinel/agent/keys
+      mode: "0700"
+    - path: /opt/sentinel/agent/inventory
+      mode: "0755"
+
+# The fleet SSH key (the same key Ansible uses locally) — the agent SSHes to app
+# hosts for describe_service and remediation playbooks. Owned by uid 1000 so
+# the container's appuser reads it at 0600 (ssh refuses looser perms). no_log
+# keeps the private key out of Ansible output.
+- name: Install the fleet SSH key for the agent
+  become: true
+  no_log: true
+  ansible.builtin.copy:
+    content: >-
+      {{ lookup('amazon.aws.aws_ssm', '/sentinel/ssh_private_key',
+      region=aws_region) | trim }}
+
+    dest: /opt/sentinel/agent/keys/id_ed25519
+    owner: "1000"
+    group: "1000"
+    mode: "0600"
+
+# The generated inventory (per-fleet host IPs) — mounted so ansible-playbook in
+# the container resolves the same hosts this deploy targets. group_vars is baked
+# into the image alongside it.
+- name: Copy the generated inventory for the agent
+  become: true
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/inventory/hosts.yml"
+    dest: /opt/sentinel/agent/inventory/hosts.yml
+    owner: "1000"
+    group: "1000"
+    mode: "0644"
+
+# service -> host private IP, for the describe_service SSH target (the skill's
+# service_hosts). Built from the same topology map the deploy uses.
+- name: Build the service->host map for the agent
+  ansible.builtin.set_fact:
+    agent_service_hosts: >-
+      {{ agent_service_hosts | default({})
+         | combine({item.key: hostvars[item.value.host].private_ip}) }}
+  loop: "{{ services | dict2items }}"
+  loop_control:
+    label: "{{ item.key }}"
+
+# no_log: DATABASE_URL carries the pg_password. The agent reaches LiteLLM over
+# localhost (both host-networked); the SDK routes through the proxy via
+# the litellm_proxy/ model prefix, so a provider switch stays a gateway change.
+- name: Run the sentinel agent
+  become: true
+  no_log: true
+  community.docker.docker_container:
+    name: "{{ agent_container }}"
+    image: "{{ agent_image }}"
+    pull: true
+    recreate: true
+    state: started
+    restart_policy: unless-stopped
+    network_mode: host
+    env:
+      DATABASE_URL: "{{ database_url }}"
+      PROM_URL: "http://{{ mon_ip }}:9090"
+      LOKI_URL: "http://{{ mon_ip }}:3100"
+      TEMPO_URL: "http://{{ mon_ip }}:3200"
+      SENTINEL_SERVICE_HOSTS: "{{ agent_service_hosts | to_json }}"
+      SSH_USER: ubuntu
+      SSH_KEY_PATH: /keys/id_ed25519
+      LITELLM_BASE_URL: "http://localhost:4000"
+      LITELLM_API_KEY: "sk-sentinel"
+      SENTINEL_MODEL: "litellm_proxy/sentinel-agent"
+    volumes:
+      - /opt/sentinel/agent/keys/id_ed25519:/keys/id_ed25519:ro
+      - /opt/sentinel/agent/inventory/hosts.yml:/app/ansible/inventory/hosts.yml:ro

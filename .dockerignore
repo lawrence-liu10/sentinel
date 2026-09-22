@@ -1,0 +1,15 @@
+# The agent image builds from the REPO ROOT (it needs agent/ + ansible/). Keep
+# everything else OUT of the build context — most importantly infra/.ssh, which
+# holds the fleet SSH private key (gitignored, but present on disk). Nothing that
+# isn't explicitly un-ignored below ever reaches the Docker daemon.
+*
+!agent
+!ansible
+
+# Re-ignore dev/local cruft inside the kept trees.
+agent/tests
+ansible/.collections
+**/__pycache__
+**/.pytest_cache
+**/.venv
+**/*.pyc

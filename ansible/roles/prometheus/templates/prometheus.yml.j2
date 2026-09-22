@@ -52,8 +52,8 @@ scrape_configs:
           service: "{{ t.service }}"
 {% endfor %}
 
-  # Phase 4: the Sentinel agent exposes /metrics on ctrl-1:8080. Uncomment once
-  # the agent is deployed — until then it would be a permanently-down target.
-  # - job_name: agent
-  #   static_configs:
-  #     - targets: ["{{ hostvars['ctrl-1'].private_ip }}:8080"]
+  # Phase 4: the Sentinel agent exposes /metrics on ctrl-1:8080 (incidents handled,
+  # tokens used). SG allows this scrape (ctrl 8080 <- sg-mon).
+  - job_name: agent
+    static_configs:
+      - targets: ["{{ hostvars['ctrl-1'].private_ip }}:8080"]

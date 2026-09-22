@@ -34,3 +34,8 @@
   hosts: control
   roles:
     - loadgen
+
+# Phase 4 control plane (LiteLLM + agent + schema). Last: needs the app, LGTM,
+# and Postgres. Requires the sentinel-agent image built by CI first.
+- name: Agent control plane
+  ansible.builtin.import_playbook: agent.yml
