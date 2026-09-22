@@ -10,3 +10,14 @@
     published_ports: ["{{ app_host_port }}:8000"]
     env: "{{ app_env }}"
     memory: "{{ app_memory | default(omit, true) }}"
+
+# Every deploy pulls a moving `latest`, orphaning the previous image's layers.
+# The app hosts have 8 GB root volumes, so a few sessions of that fills the disk
+# and the next pull dies mid-extract with "no space left on device". Only
+# untagged leftovers go; a tagged image (latest-bad, a pinned version) is kept.
+- name: Prune images orphaned by the pull
+  become: true
+  community.docker.docker_prune:
+    images: true
+    images_filters:
+      dangling: true

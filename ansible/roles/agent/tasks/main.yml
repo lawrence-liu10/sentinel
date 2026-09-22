@@ -19,6 +19,23 @@
     - path: /opt/sentinel/agent/inventory
       mode: "0755"
 
+# Phase 3's webhook stub owns :8080 on this host and survives reboots (systemd).
+# The agent is its replacement and binds the same port with host networking, so
+# the stub has to go first — otherwise the container dies on "address in use".
+- name: Look for the Phase 3 webhook stub unit
+  become: true
+  ansible.builtin.stat:
+    path: /etc/systemd/system/sentinel-webhook.service
+  register: webhook_stub_unit
+
+- name: Stop and disable the Phase 3 webhook stub
+  become: true
+  when: webhook_stub_unit.stat.exists
+  ansible.builtin.systemd_service:
+    name: sentinel-webhook
+    state: stopped
+    enabled: false
+
 # The fleet SSH key (the same key Ansible uses locally) — the agent SSHes to app
 # hosts for describe_service and remediation playbooks. Owned by uid 1000 so
 # the container's appuser reads it at 0600 (ssh refuses looser perms). no_log

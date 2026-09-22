@@ -35,16 +35,22 @@ resource "local_sensitive_file" "ssh_private_key" {
   file_permission = "0600"
 }
 
-# Fleet definition. Roles/sizes/ports are the contracts §1 map (ctrl-1 downsized
-# to t3.micro). app/db/mon carry the worker profile; ctrl-1 carries the control
-# profile (Bedrock + EC2 start/stop).
+# Fleet definition. Roles/sizes/ports are the contracts §1 map. app/db/mon carry
+# the worker profile; ctrl-1 carries the control profile (Bedrock + EC2
+# start/stop).
+#
+# ctrl-1 was t3.micro/8 GB while it ran only the loadgen and a webhook stub.
+# Phase 4 puts the LiteLLM gateway and the agent on it: measured live, LiteLLM
+# alone took ~500 MB of the micro's 911 MB and wedged sshd, and its image left
+# 622 MB of disk — not enough for the agent image on top. t3.small + 20 GB fits
+# both with headroom; ~+$2/mo at this fleet's duty cycle.
 locals {
   hosts = {
     "app-1"  = { size = "t3.small", role = "app", sg = var.sg_app_id, profile = var.worker_instance_profile, disk = 8 }
     "app-2"  = { size = "t3.small", role = "app", sg = var.sg_app_id, profile = var.worker_instance_profile, disk = 8 }
     "db-1"   = { size = "t3.small", role = "db", sg = var.sg_db_id, profile = var.worker_instance_profile, disk = 15 }
     "mon-1"  = { size = "t3.medium", role = "monitoring", sg = var.sg_mon_id, profile = var.worker_instance_profile, disk = 16 }
-    "ctrl-1" = { size = "t3.micro", role = "control", sg = var.sg_ctrl_id, profile = var.ctrl_instance_profile, disk = 8 }
+    "ctrl-1" = { size = "t3.small", role = "control", sg = var.sg_ctrl_id, profile = var.ctrl_instance_profile, disk = 20 }
   }
 }
 
